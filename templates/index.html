@@ -135,10 +135,43 @@
             </div>
             
             <div class="page-selection" id="pageSelection">
+                <h3 style="color: #4ECDC4;">📄 Select Pages to Analyze</h3>
+                <p style="margin-top: 10px; color: #ccc;">Selected pages: <strong id="selectedCount">0</strong></p>
+                <div class="page-selection-controls">
+                    <button type="button" class="select-btn" id="selectAllBtn">Select All</button>
+                    <button type="button" class="select-btn" id="deselectAllBtn">Clear Selection</button>
                 </div>
-            
+                <div class="page-grid" id="pageGrid"></div>
+            </div>
+
             <div class="options-grid">
+                <div class="option-group">
+                    <h3>Processing Options</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipBlank" checked>
+                        <label for="skipBlank">Skip blank/white tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipEdges" checked>
+                        <label for="skipEdges">Skip document edge tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useParallel" checked>
+                        <label for="useParallel">Enable parallel processing</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useCache" checked>
+                        <label for="useCache">Use result caching</label>
+                    </div>
                 </div>
+                <div class="option-group">
+                    <h3>Detection Threshold</h3>
+                    <div class="slider-group">
+                        <label for="confidence">Confidence Threshold: <span class="slider-value" id="confidenceValue">0.50</span></label>
+                        <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
+                    </div>
+                </div>
+            </div>
             
             <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Roboflow)</button>
             <button class="btn" id="analyzeGeminiBtn" disabled style="background: linear-gradient(135deg, #4ECDC4 0%, #45B7D1 100%); margin-left: 15px;">🤖 Analyze with Gemini AI</button>
@@ -176,269 +209,17 @@
         </div>
         
         <div class="modal" id="imageModal">
+            <div class="modal-content">
+                <span class="modal-close" id="modalClose" role="button" aria-label="Close preview">&times;</span>
+                <img class="modal-image" id="modalImage" alt="Annotated page preview">
+                <div class="modal-info" id="modalInfo"></div>
+                <div class="modal-controls">
+                    <button class="modal-btn download" id="modalDownload">Download PDF</button>
+                </div>
             </div>
+        </div>
     </div>
-    
-    <script>
-        // --- START: ADD THIS TO YOUR static/js/main.js ---
-        
-        // Ensure global variables are accessible
-        let currentFile = null;
-        let currentJobId = null; 
-        
-        // --- UTILITY FUNCTIONS ---
-        const escapeHTML = (str) => {
-            if (str === null || typeof str === 'undefined') return '';
-            return String(str).replace(/[&<>"']/g, (m) => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-            }[m]));
-        };
 
-        const showPlaceholder = (text, placeholder = "Not found") => {
-            if (!text || (Array.isArray(text) && text.length === 0)) {
-                return `<span class="placeholder">${placeholder}</span>`;
-            }
-            if (Array.isArray(text)) {
-                return `<ul>${text.map(item => `<li>${escapeHTML(item)}</li>`).join('')}</ul>`;
-            }
-            return `<span class="value">${escapeHTML(text)}</span>`;
-        };
-        
-        // Find your existing `handleFile` function and UPDATE it
-        function handleFile(file) {
-            // ... (your existing file type check) ...
-            currentFile = file;
-            document.getElementById('fileName').textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
-            document.getElementById('analyzeBtn').disabled = false;
-            
-            // --- ADD THIS LINE ---
-            document.getElementById('analyzeGeminiBtn').disabled = false; 
-            // --- END ADD ---
-
-            // ... (the rest of your handleFile, e.g., page selection) ...
-        }
-        
-        // Find your existing `analyzeDocument` function (for Roboflow)
-        // and ADD these lines to disable the Gemini button
-        async function analyzeDocument() {
-            // ...
-            document.getElementById('analyzeBtn').disabled = true;
-            // --- ADD THIS LINE ---
-            document.getElementById('analyzeGeminiBtn').disabled = true;
-            // --- END ADD ---
-
-            // ... (rest of function) ...
-            
-            try {
-                // ... (rest of try block) ...
-                if (result.success) {
-                    currentJobId = result.job_id;
-                    // ...
-                    // --- ADD THIS LINE (in success block) ---
-                    document.getElementById('analyzeGeminiBtn').disabled = false;
-                } else {
-                    // ...
-                    // --- ADD THIS LINE (in error block) ---
-                    document.getElementById('analyzeGeminiBtn').disabled = !currentFile;
-                }
-            } catch (error) {
-                // ...
-                // --- ADD THIS LINE (in catch block) ---
-                document.getElementById('analyzeGeminiBtn').disabled = !currentFile;
-            }
-        }
-        
-        // --- ADD THESE NEW FUNCTIONS for GEMINI ---
-        
-        // Wire up the Gemini button
-        document.getElementById('analyzeGeminiBtn').addEventListener('click', analyzeWithGemini);
-        
-        async function analyzeWithGemini() {
-            if (!currentFile) {
-                alert('Please select a PDF file first.');
-                return;
-            }
-
-            // Disable both buttons
-            document.getElementById('analyzeBtn').disabled = true;
-            document.getElementById('analyzeGeminiBtn').disabled = true;
-
-            // Show progress
-            const progressSection = document.getElementById('progressSection');
-            progressSection.style.display = 'block';
-            updateProgress(0, 'Uploading PDF for Gemini Analysis...');
-            
-            // Hide old results
-            document.getElementById('resultsSection').style.display = 'none';
-            document.getElementById('geminiResultsSection').style.display = 'none';
-
-            const formData = new FormData();
-            formData.append('pdf', currentFile);
-
-            try {
-                updateProgress(20, 'Sending to Gemini AI. This may take a minute...');
-                
-                const response = await fetch('/api/analyze_gemini', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                updateProgress(80, 'Processing Gemini response...');
-                const result = await response.json();
-
-                if (result.success) {
-                    updateProgress(100, 'Gemini analysis complete!');
-                    displayGeminiResults(result); // Pass the whole result
-                    setTimeout(() => { progressSection.style.display = 'none'; }, 1000);
-                } else {
-                    alert('Gemini AI Error: ' + result.error);
-                    progressSection.style.display = 'none';
-                }
-
-            } catch (error) {
-                console.error('Gemini fetch error:', error);
-                alert('An error occurred while contacting the Gemini AI service.');
-                progressSection.style.display = 'none';
-            } finally {
-                // Re-enable buttons
-                document.getElementById('analyzeBtn').disabled = false;
-                document.getElementById('analyzeGeminiBtn').disabled = false;
-            }
-        }
-
-        /**
-         * NEW: Updated display function for the new Gemini data structure
-         */
-        function displayGeminiResults(data) {
-            const container = document.getElementById('geminiResultsSection');
-            container.style.display = 'grid'; // Make it visible
-            
-            if (!data || !data.success) {
-                container.innerHTML = `<p class="placeholder">Analysis failed or returned no data. ${data.error || ''}</p>`;
-                return;
-            }
-            
-            let html = '';
-            
-            // --- Project Info ---
-            if (data.project_info) {
-                const info = data.project_info;
-                html += `
-                <div class="gemini-card full-width">
-                    <h3>Project Information</h3>
-                    <p><strong>Project Name:</strong> ${showPlaceholder(info.project_name)}</p>
-                    <p><strong>Scope:</strong> ${showPlaceholder(info.scope_summary)}</p>
-                    <p><strong>Location:</strong> ${showPlaceholder(info.location)}</p>
-                    <p><strong>Type:</strong> ${showPlaceholder(info.project_type)}</p>
-                    <p><strong>Owner:</strong> ${showPlaceholder(info.owner)}</p>
-                    <p><strong>Architect:</strong> ${showPlaceholder(info.architect)}</p>
-                    <p><strong>Engineer:</strong> ${showPlaceholder(info.engineer)}</p>
-                    <p><strong>Project #:</strong> ${showPlaceholder(info.project_number)}</p>
-                </div>`;
-            }
-
-            // --- Code Requirements ---
-            if (data.code_requirements) {
-                const codes = data.code_requirements;
-                html += `
-                <div class="gemini-card">
-                    <h3>Code Requirements</h3>
-                    <p><strong>Building:</strong> ${showPlaceholder(codes.building_codes)}</p>
-                    <p><strong>Fire:</strong> ${showPlaceholder(codes.fire_codes)}</p>
-                    <p><strong>Electrical:</strong> ${showPlaceholder(codes.electrical_codes)}</p>
-                    <p><strong>FA Standards:</strong> ${showPlaceholder(codes.fire_alarm_standards)}</p>
-                    <p><strong>Local:</strong> ${showPlaceholder(codes.local_codes)}</p>
-                </div>`;
-            }
-
-            // --- FA Pages ---
-            html += `
-            <div class="gemini-card">
-                <h3>Fire Alarm Pages</h3>
-                ${showPlaceholder(data.fire_alarm_pages, "No specific pages identified.")}
-            </div>`;
-
-            // --- System Specifications ---
-            if (data.specifications) {
-                const specs = data.specifications;
-                html += `
-                <div class="gemini-card full-width">
-                    <h3>System Specifications</h3>
-                    <p><strong>System Type:</strong> ${showPlaceholder(specs.SYSTEM_TYPE)}</p>
-                    <p><strong>Control Panel:</strong> ${showPlaceholder(specs.CONTROL_PANEL)}</p>
-                    <p><strong>Devices:</strong> ${showPlaceholder(specs.DEVICES)}</p>
-                    <p><strong>Notification:</strong> ${showPlaceholder(specs.NOTIFICATION_DEVICES)}</p>
-                    <p><strong>Communication:</strong> ${showPlaceholder(specs.COMMUNICATION)}</p>
-                    <p><strong>Monitoring:</strong> ${showPlaceholder(specs.MONITORING)}</p>
-                    <p><strong>Power:</strong> ${showPlaceholder(specs.POWER_REQUIREMENTS)}</p>
-                    <p><strong>Integration:</strong> ${showPlaceholder(specs.INTEGRATION)}</p>
-                </div>`;
-            }
-
-            // --- Fire Alarm Notes ---
-            if (data.fire_alarm_notes) {
-                html += `
-                <div class="gemini-card full-width fa-notes">
-                    <h3>Fire Alarm Notes</h3>`;
-                if (data.fire_alarm_notes.length > 0) {
-                    html += '<ul>';
-                    data.fire_alarm_notes.forEach(note => {
-                        html += `<li>
-                            <span class="note-page">Page ${escapeHTML(note.page)}</span>
-                            <strong>${escapeHTML(note.note_type)}:</strong>
-                            ${escapeHTML(note.content)}
-                        </li>`;
-                    });
-                    html += '</ul>';
-                } else {
-                    html += '<p class="placeholder">No specific fire alarm notes found.</p>';
-                }
-                html += '</div>';
-            }
-
-            // --- Mechanical Devices ---
-            if (data.mechanical_devices) {
-                const mech = data.mechanical_devices;
-                html += `
-                <div class="gemini-card full-width">
-                    <h3>Mechanical Review</h3>`;
-                
-                // Duct Detectors
-                html += '<h4>Duct Detectors</h4>';
-                if (mech.duct_detectors && mech.duct_detectors.length > 0) {
-                    mech.duct_detectors.forEach(dev => {
-                        html += `<div class="gemini-card mech-device">
-                            <p><strong>Page:</strong> ${showPlaceholder(dev.page)}</p>
-                            <p><strong>Type:</strong> ${showPlaceholder(dev.device_type)}</p>
-                            <p><strong>Location:</strong> ${showPlaceholder(dev.location)}</p>
-                            <p><strong>Specs:</strong> ${showPlaceholder(dev.specifications)}</p>
-                        </div>`;
-                    });
-                } else {
-                    html += '<p class="placeholder">No duct detectors found.</p>';
-                }
-
-                // Dampers
-                html += '<h4 style="margin-top: 20px;">Fire/Smoke Dampers</h4>';
-                if (mech.dampers && mech.dampers.length > 0) {
-                    mech.dampers.forEach(dev => {
-                        html += `<div class="gemini-card mech-device">
-                            <p><strong>Page:</strong> ${showPlaceholder(dev.page)}</p>
-                            <p><strong>Type:</strong> ${showPlaceholder(dev.device_type)}</p>
-                            <p><strong>Location:</strong> ${showPlaceholder(dev.location)}</p>
-                            <p><strong>Specs:</strong> ${showPlaceholder(dev.specifications)}</p>
-                        </div>`;
-                    });
-                } else {
-                    html += '<p class="placeholder">No dampers found.</p>';
-                }
-                html += '</div>';
-            }
-
-            container.innerHTML = html;
-        }
-        
-        // --- END: ADD THIS TO YOUR static/js/main.js ---
-    </script>
+    <script src="/static/js/main.js"></script>
 </body>
 </html>
