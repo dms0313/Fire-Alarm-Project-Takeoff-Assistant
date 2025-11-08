@@ -6,59 +6,127 @@ const fileError = document.getElementById('fileError');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const analyzeGeminiBtn = document.getElementById('analyzeGeminiBtn');
 const pageSelection = document.getElementById('pageSelection');
+const confidenceSlider = document.getElementById('confidence');
+const confidenceValue = document.getElementById('confidenceValue');
+const selectAllBtn = document.getElementById('selectAllBtn');
+const deselectAllBtn = document.getElementById('deselectAllBtn');
+
+let selectedFile = null;
 
 // Event Listeners
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drag-over');
-});
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
-});
-dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    handleFiles(e.dataTransfer.files);
-});
+if (dropZone && fileInput) {
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput.click();
+        }
+    });
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('drag-over');
+    });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        handleFiles(e.dataTransfer.files);
+    });
+}
 
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
+if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+}
 
 // Confidence slider
-document.getElementById('confidence').addEventListener('input', (e) => {
-    document.getElementById('confidenceValue').textContent = parseFloat(e.target.value).toFixed(2);
-});
+if (confidenceSlider && confidenceValue) {
+    confidenceValue.textContent = parseFloat(confidenceSlider.value).toFixed(2);
+    confidenceSlider.addEventListener('input', (e) => {
+        confidenceValue.textContent = parseFloat(e.target.value).toFixed(2);
+    });
+}
+
+if (selectAllBtn) {
+    selectAllBtn.addEventListener('click', selectAllPages);
+}
+
+if (deselectAllBtn) {
+    deselectAllBtn.addEventListener('click', deselectAllPages);
+}
 
 function handleFiles(files) {
-    if (files.length === 0) return;
-    
+    if (!files || files.length === 0) return;
+
     const file = files[0];
-    if (!file.type.includes('pdf')) {
+    const fileNameLower = (file.name || '').toLowerCase();
+    const isPdf = (file.type && file.type.toLowerCase().includes('pdf')) || fileNameLower.endsWith('.pdf');
+
+    if (!isPdf) {
         showError('Please select a PDF file');
         return;
     }
-    
+
     if (file.size > 50 * 1024 * 1024) {
         showError('File size must be less than 50MB');
         return;
     }
-    
-    fileName.textContent = file.name;
-    fileError.style.display = 'none';
-    analyzeBtn.disabled = false;
-    analyzeGeminiBtn.disabled = false;
-    
+
+    selectedFile = file;
+
+    if (fileInput && fileInput.files && fileInput.files[0] !== file) {
+        try {
+            if (window.DataTransfer) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                fileInput.files = dataTransfer.files;
+            }
+        } catch (err) {
+            // Fallback: reset the input so the same file can be re-selected later
+            fileInput.value = '';
+        }
+    }
+
+    if (fileName) {
+        fileName.textContent = file.name;
+    }
+    if (fileError) {
+        fileError.style.display = 'none';
+    }
+    if (analyzeBtn) {
+        analyzeBtn.disabled = false;
+    }
+    if (analyzeGeminiBtn) {
+        analyzeGeminiBtn.disabled = false;
+    }
+
     generatePagePreviews(file);
 }
 
 function showError(message) {
-    fileError.textContent = message;
-    fileError.style.display = 'block';
-    fileName.textContent = '';
-    analyzeBtn.disabled = true;
-    analyzeGeminiBtn.disabled = true;
+    if (fileError) {
+        fileError.textContent = message;
+        fileError.style.display = 'block';
+    }
+    if (fileName) {
+        fileName.textContent = '';
+    }
+    selectedFile = null;
+    if (fileInput) {
+        fileInput.value = '';
+    }
+    if (analyzeBtn) {
+        analyzeBtn.disabled = true;
+    }
+    if (analyzeGeminiBtn) {
+        analyzeGeminiBtn.disabled = true;
+    }
+    if (pageSelection) {
+        pageSelection.style.display = 'none';
+    }
 }
 
 function checkStatus() {
@@ -99,7 +167,9 @@ function generatePagePreviews(file) {
     const formData = new FormData();
     formData.append('pdf', file);
     
-    pageSelection.style.display = 'none';
+    if (pageSelection) {
+        pageSelection.style.display = 'none';
+    }
     
     fetch('/api/preview_pages', {
         method: 'POST',
@@ -109,6 +179,9 @@ function generatePagePreviews(file) {
     .then(data => {
         if (data.success) {
             const pageGrid = document.getElementById('pageGrid');
+            if (!pageGrid) {
+                return;
+            }
             pageGrid.innerHTML = '';
             
             data.pages.forEach((page) => {
@@ -125,7 +198,9 @@ function generatePagePreviews(file) {
                 pageGrid.appendChild(pageThumb);
             });
             
-            pageSelection.style.display = 'block';
+            if (pageSelection) {
+                pageSelection.style.display = 'block';
+            }
             updateSelectedCount();
         } else {
             showError('Error generating page previews');
@@ -139,7 +214,10 @@ function generatePagePreviews(file) {
 
 function updateSelectedCount() {
     const selectedPages = document.querySelectorAll('.page-thumb.selected').length;
-    document.getElementById('selectedCount').textContent = selectedPages;
+    const selectedCount = document.getElementById('selectedCount');
+    if (selectedCount) {
+        selectedCount.textContent = selectedPages;
+    }
 }
 
 function selectAllPages() {
@@ -157,13 +235,20 @@ function deselectAllPages() {
 }
 
 // Analysis functions
-analyzeBtn.addEventListener('click', () => startAnalysis('roboflow'));
-analyzeGeminiBtn.addEventListener('click', () => startAnalysis('gemini'));
+if (analyzeBtn) {
+    analyzeBtn.addEventListener('click', () => startAnalysis('roboflow'));
+}
+if (analyzeGeminiBtn) {
+    analyzeGeminiBtn.addEventListener('click', () => startAnalysis('gemini'));
+}
 
 function startAnalysis(type) {
-    const file = fileInput.files[0];
-    if (!file) return;
-    
+    const file = selectedFile || (fileInput ? fileInput.files[0] : null);
+    if (!file) {
+        alert('Please select a PDF file first');
+        return;
+    }
+
     const formData = new FormData();
     formData.append('pdf', file);
     
@@ -177,11 +262,17 @@ function startAnalysis(type) {
         return;
     }
     
-    formData.append('skip_blank', document.getElementById('skipBlank').checked);
-    formData.append('skip_edges', document.getElementById('skipEdges').checked);
-    formData.append('use_parallel', document.getElementById('useParallel').checked);
-    formData.append('use_cache', document.getElementById('useCache').checked);
-    formData.append('confidence', document.getElementById('confidence').value);
+    const skipBlank = document.getElementById('skipBlank');
+    const skipEdges = document.getElementById('skipEdges');
+    const useParallel = document.getElementById('useParallel');
+    const useCache = document.getElementById('useCache');
+    const confidence = document.getElementById('confidence');
+
+    formData.append('skip_blank', skipBlank ? skipBlank.checked : false);
+    formData.append('skip_edges', skipEdges ? skipEdges.checked : false);
+    formData.append('use_parallel', useParallel ? useParallel.checked : false);
+    formData.append('use_cache', useCache ? useCache.checked : false);
+    formData.append('confidence', confidence ? confidence.value : 0.5);
     
     const progressSection = document.getElementById('progressSection');
     const progressFill = document.getElementById('progressFill');
@@ -190,8 +281,12 @@ function startAnalysis(type) {
     progressFill.style.width = '0%';
     progressText.textContent = 'Starting analysis...';
     
-    analyzeBtn.disabled = true;
-    analyzeGeminiBtn.disabled = true;
+    if (analyzeBtn) {
+        analyzeBtn.disabled = true;
+    }
+    if (analyzeGeminiBtn) {
+        analyzeGeminiBtn.disabled = true;
+    }
     
     const endpoint = type === 'gemini' ? '/api/analyze_gemini' : '/api/analyze';
     fetch(endpoint, {
@@ -213,8 +308,12 @@ function startAnalysis(type) {
         progressFill.style.backgroundColor = '#ff6b6b';
     })
     .finally(() => {
-        analyzeBtn.disabled = false;
-        analyzeGeminiBtn.disabled = false;
+        if (analyzeBtn) {
+            analyzeBtn.disabled = false;
+        }
+        if (analyzeGeminiBtn) {
+            analyzeGeminiBtn.disabled = false;
+        }
     });
 }
 
@@ -323,7 +422,11 @@ async function viewPage(jobId, pageNum) {
         const modalImage = document.getElementById('modalImage');
         const modalInfo = document.getElementById('modalInfo');
         const modalDownload = document.getElementById('modalDownload');
-        
+
+        if (!(modal && modalImage && modalInfo && modalDownload)) {
+            throw new Error('Preview modal elements missing');
+        }
+
         modalImage.src = URL.createObjectURL(blob);
         modalInfo.textContent = `Page ${pageNum}`;
         modalDownload.onclick = () => downloadPage(jobId, pageNum);
@@ -378,10 +481,14 @@ async function downloadPage(jobId, pageNum) {
 const modal = document.getElementById('imageModal');
 const modalClose = document.getElementById('modalClose');
 
-modalClose.onclick = () => modal.classList.remove('active');
-modal.onclick = (e) => {
-    if (e.target === modal) modal.classList.remove('active');
-};
+if (modalClose && modal) {
+    modalClose.onclick = () => modal.classList.remove('active');
+}
+if (modal) {
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.classList.remove('active');
+    };
+}
 
 // Check status on page load
 document.addEventListener('DOMContentLoaded', () => {
