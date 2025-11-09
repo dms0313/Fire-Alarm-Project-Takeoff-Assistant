@@ -5,221 +5,162 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🚨 Fire Alarm PDF Analyzer - v6</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    
-    <style>
-        #geminiResultsSection {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-            text-align: left;
-            margin-top: 30px;
-        }
-        .gemini-card {
-            background: #2a2a2a;
-            padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #45B7D1;
-            grid-column: span 1;
-        }
-        .gemini-card h3 {
-            color: #45B7D1;
-            margin-bottom: 15px;
-            font-size: 1.3em;
-            border-bottom: 1px solid #444;
-            padding-bottom: 8px;
-        }
-        .gemini-card ul {
-            list-style-type: disc;
-            margin-left: 20px;
-            padding-left: 5px;
-        }
-        .gemini-card li, .gemini-card p {
-            margin-bottom: 10px;
-            line-height: 1.6;
-            color: #ddd;
-        }
-        .gemini-card p > strong {
-            color: #aaa;
-            margin-right: 8px;
-            display: inline-block;
-            min-width: 120px;
-        }
-        .gemini-card .value {
-            color: #fff;
-            font-weight: 500;
-        }
-        .gemini-card .placeholder {
-            color: #777;
-            font-style: italic;
-        }
-        .gemini-card.full-width {
-            grid-column: 1 / -1;
-        }
-        .gemini-card.fa-notes li {
-            background: #333;
-            padding: 10px;
-            border-radius: 5px;
-            margin-left: -15px;
-            list-style-type: none;
-        }
-        .gemini-card.fa-notes .note-page {
-            display: inline-block;
-            background: #ff6b6b;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.85em;
-            font-weight: bold;
-            margin-right: 10px;
-        }
-        .gemini-card.mech-device {
-            background: #303030;
-            border-left-color: #f7b731;
-            margin-bottom: 10px;
-        }
-        .gemini-card.mech-device p {
-            margin-bottom: 5px;
-        }
-        .spinner {
-            border: 4px solid #333;
-            border-top: 4px solid #45B7D1;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
+    <script defer src="/static/js/main.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>🚨 Fire Alarm PDF Analyzer</h1>
-        <p class="subtitle">Version 6 - Optimized Detection & Gemini AI Analysis</p>
-        
-        <div class="info-banner">
-            <h3>⚡ Performance Optimizations Enabled:</h3>
-            <ul>
-                <li><strong>Blank Tile Filtering:</strong> Skip empty/white tiles (1.5-3x speedup)</li>
-                <li><strong>Edge Tile Filtering:</strong> Skip document margins (1.2-1.5x speedup)</li>
-                <li><strong>Parallel Processing:</strong> Process multiple tiles simultaneously (2-8x speedup)</li>
-                <li><strong>Result Caching:</strong> Avoid reprocessing identical tiles</li>
-                <li><strong>Smart Prioritization:</strong> Process content-rich tiles first</li>
-            </ul>
-        </div>
-        
-        <div class="status-bar">
+        <p class="subtitle">Version 6 - Optimized Detection &amp; Gemini AI Analysis</p>
+
+        <div class="status-bar" role="status">
             <div class="status-item">
-                <div class="status-dot" id="roboflow-status"></div>
+                <div class="status-dot" id="roboflow-status" aria-hidden="true"></div>
                 <span>Roboflow API: <span id="roboflow-text">Checking...</span></span>
             </div>
             <div class="status-item">
-                <div class="status-dot" id="gemini-status"></div>
+                <div class="status-dot" id="gemini-status" aria-hidden="true"></div>
                 <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
             </div>
             <div class="status-item">
                 <span>Model: <strong id="model-info">-</strong></span>
             </div>
         </div>
-        
-        <div class="upload-section">
-            <div class="upload-area">
-                <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Click to select or drop PDF file">
-                    <div class="drop-zone-icon">📄</div>
-                    <h2>Drop PDF here or click to browse</h2>
-                    <p style="color: #aaa; margin-top: 10px;">Maximum file size: 50MB</p>
-                    <input type="file" id="fileInput" accept=".pdf,.PDF" style="display: none;">
-                </div>
-                <div id="fileName" style="margin-top: 15px; color: #4ECDC4;"></div>
-                <div id="fileError" style="margin-top: 10px; color: #ff6b6b; display: none;"></div>
-            </div>
-            
-            <div class="page-selection" id="pageSelection">
-                <h3 style="color: #4ECDC4;">📄 Select Pages to Analyze</h3>
-                <p style="margin-top: 10px; color: #ccc;">Selected pages: <strong id="selectedCount">0</strong></p>
-                <div class="page-selection-controls">
-                    <button type="button" class="select-btn" id="selectAllBtn">Select All</button>
-                    <button type="button" class="select-btn" id="deselectAllBtn">Clear Selection</button>
-                </div>
-                <div class="page-grid" id="pageGrid"></div>
-            </div>
 
-            <div class="options-grid">
-                <div class="option-group">
-                    <h3>Processing Options</h3>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="skipBlank" checked>
-                        <label for="skipBlank">Skip blank/white tiles</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="skipEdges" checked>
-                        <label for="skipEdges">Skip document edge tiles</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="useParallel" checked>
-                        <label for="useParallel">Enable parallel processing</label>
-                    </div>
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="useCache" checked>
-                        <label for="useCache">Use result caching</label>
-                    </div>
-                </div>
-                <div class="option-group">
-                    <h3>Detection Threshold</h3>
-                    <div class="slider-group">
-                        <label for="confidence">Confidence Threshold: <span class="slider-value" id="confidenceValue">0.50</span></label>
-                        <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
-                    </div>
-                </div>
-            </div>
-            
-            <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Roboflow)</button>
-            <button class="btn" id="analyzeGeminiBtn" disabled style="background: linear-gradient(135deg, #4ECDC4 0%, #45B7D1 100%); margin-left: 15px;">🤖 Analyze with Gemini AI</button>
-        </div>
-        
-        <div class="progress-section" id="progressSection">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">Initializing...</div>
+        <div class="tab-container" role="tablist">
+            <button class="tab-button active" id="tabButtonUpload" data-tab="upload" role="tab" aria-selected="true" aria-controls="tab-upload">
+                📁 Project Upload
+            </button>
+            <button class="tab-button" id="tabButtonGemini" data-tab="gemini" role="tab" aria-selected="false" aria-controls="tab-gemini" disabled title="Upload a PDF to enable Gemini">
+                🤖 Gemini Analyzer
+            </button>
         </div>
 
-        <div id="geminiResultsSection" style="display: none;">
-        </div>
-        
-        <div class="results-section" id="resultsSection" style="display: none;">
-            <h2 style="color: #4ECDC4; margin-bottom: 20px;">📊 Symbol Analysis Results</h2>
-            
-            <div class="results-summary" id="resultsSummary"></div>
-            
-            <h3 style="color: #ff6b6b; margin-top: 30px; margin-bottom: 15px;">🚨 Detected Devices</h3>
-            <div class="devices-grid" id="devicesGrid"></div>
-            
-            <div class="export-section">
-                <button class="btn export-btn" id="exportBtn">📥 Export Results (JSON)</button>
+        <section id="tab-upload" class="tab-panel active" role="tabpanel" aria-labelledby="tabButtonUpload">
+            <div class="info-banner">
+                <h3>⚡ Performance Optimizations Enabled:</h3>
+                <ul>
+                    <li><strong>Blank Tile Filtering:</strong> Skip empty/white tiles (1.5-3x speedup)</li>
+                    <li><strong>Edge Tile Filtering:</strong> Skip document margins (1.2-1.5x speedup)</li>
+                    <li><strong>Parallel Processing:</strong> Process multiple tiles simultaneously (2-8x speedup)</li>
+                    <li><strong>Result Caching:</strong> Avoid reprocessing identical tiles</li>
+                    <li><strong>Smart Prioritization:</strong> Process content-rich tiles first</li>
+                </ul>
             </div>
-            
-            <div class="preview-section" id="previewSection" style="display: none;">
-                <h3>🖼️ Annotated Pages Preview</h3>
-                <p style="color: #aaa; margin-top: 10px; margin-bottom: 20px;">
-                    Click any image to view in full screen
+
+            <div class="upload-section">
+                <div class="upload-area">
+                    <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Click to select or drop PDF file">
+                        <div class="drop-zone-icon">📄</div>
+                        <h2>Drop PDF here or click to browse</h2>
+                        <p class="upload-help">Maximum file size: 50MB</p>
+                        <input type="file" id="fileInput" accept=".pdf,.PDF" style="display: none;">
+                    </div>
+                    <div id="fileName" class="file-name"></div>
+                    <div id="fileError" class="file-error" role="alert"></div>
+                </div>
+
+                <div class="page-selection" id="pageSelection">
+                    <h3 class="section-title">📄 Select Pages to Analyze</h3>
+                    <p class="section-subtitle">Selected pages: <strong id="selectedCount">0</strong></p>
+                    <div class="page-selection-controls">
+                        <button type="button" class="select-btn" id="selectAllBtn">Select All</button>
+                        <button type="button" class="select-btn" id="deselectAllBtn">Clear Selection</button>
+                    </div>
+                    <div class="page-grid" id="pageGrid"></div>
+                </div>
+
+                <div class="options-grid">
+                    <div class="option-group">
+                        <h3>Processing Options</h3>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="skipBlank" checked>
+                            <label for="skipBlank">Skip blank/white tiles</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="skipEdges" checked>
+                            <label for="skipEdges">Skip document edge tiles</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="useParallel" checked>
+                            <label for="useParallel">Enable parallel processing</label>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="useCache" checked>
+                            <label for="useCache">Use result caching</label>
+                        </div>
+                    </div>
+                    <div class="option-group">
+                        <h3>Detection Threshold</h3>
+                        <div class="slider-group">
+                            <label for="confidence">Confidence Threshold: <span class="slider-value" id="confidenceValue">0.50</span></label>
+                            <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="action-row">
+                    <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Roboflow)</button>
+                </div>
+
+                <div class="progress-section" id="progressSection">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Initializing...</div>
+                </div>
+
+                <div class="results-section" id="resultsSection">
+                    <h2 class="section-title">📊 Symbol Analysis Results</h2>
+                    <div class="results-summary" id="resultsSummary"></div>
+                    <h3 class="section-title">🚨 Detected Devices</h3>
+                    <div class="devices-grid" id="devicesGrid"></div>
+                    <div class="export-section">
+                        <button class="btn export-btn" id="exportBtn">📥 Export Results (JSON)</button>
+                    </div>
+                    <div class="preview-section" id="previewSection">
+                        <h3>🖼️ Annotated Pages Preview</h3>
+                        <p class="section-subtitle">Click any image to view in full screen</p>
+                        <div class="preview-grid" id="previewGrid"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tab-gemini" class="tab-panel" role="tabpanel" aria-labelledby="tabButtonGemini">
+            <div class="gemini-header">
+                <h2>🤖 Gemini Fire Alarm Analyzer</h2>
+                <p>
+                    Gemini reviews your full bid set to capture only the fire alarm details you need. It collects
+                    project facts from the cover pages, identifies applicable codes, and pinpoints the electrical and mechanical
+                    pages that contain fire alarm system requirements, notes, and devices. Mechanical sheets are scanned for
+                    duct detectors and fire/smoke dampers tied to the fire alarm system, while boilerplate and unrelated trade
+                    information is ignored.
                 </p>
-                <div class="preview-grid" id="previewGrid"></div>
             </div>
-        </div>
-        
-        <div class="modal" id="imageModal">
-            <div class="modal-content">
-                <span class="modal-close" id="modalClose" role="button" aria-label="Close preview">&times;</span>
-                <img class="modal-image" id="modalImage" alt="Annotated page preview">
-                <div class="modal-info" id="modalInfo"></div>
-                <div class="modal-controls">
-                    <button class="modal-btn download" id="modalDownload">Download PDF</button>
-                </div>
+
+            <div class="gemini-actions">
+                <button class="btn btn-gemini" id="startGeminiBtn" disabled>Start Gemini Analysis</button>
+                <p class="gemini-helper">Gemini only runs when you click start so you can control API usage.</p>
+            </div>
+
+            <div class="gemini-progress hidden" id="geminiProgress" role="status" aria-live="polite">
+                <div class="spinner" aria-hidden="true"></div>
+                <p id="geminiProgressText">Preparing analysis...</p>
+            </div>
+
+            <div class="gemini-results hidden" id="geminiResultsSection" aria-live="polite"></div>
+        </section>
+    </div>
+
+    <div class="modal" id="imageModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="modal-content">
+            <span class="modal-close" id="modalClose" role="button" aria-label="Close preview">&times;</span>
+            <img class="modal-image" id="modalImage" alt="Annotated page preview">
+            <div class="modal-info" id="modalInfo"></div>
+            <div class="modal-controls">
+                <button class="modal-btn download" id="modalDownload">Download PDF</button>
             </div>
         </div>
     </div>
-
-    <script src="/static/js/main.js"></script>
 </body>
 </html>

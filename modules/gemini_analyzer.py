@@ -177,7 +177,9 @@ If information is not found, use null.
             'fire alarm', 'fa device', 'smoke detector', 'heat detector',
             'pull station', 'notification device', 'horn strobe', 'speaker strobe',
             'fire alarm control', 'facp', 'control panel', 'annunciator',
-            'special systems', 'power plan', 'electrical plan'
+            'special systems', 'power plan', 'electrical plan',
+            'life safety plan', 'fire alarm general notes', 'fire alarm riser',
+            'special systems plan', 'fire protection plan'
         ]
         
         for page in pages_text:
@@ -304,7 +306,7 @@ Format as JSON with keys:
 - duct_detectors: array of duct detector objects
 - dampers: array of damper objects
 
-If none found, use empty arrays.
+Only return devices that require fire alarm integration. Ignore generic HVAC notes or mechanical requirements that do not involve fire alarm monitoring or control. If none found, use empty arrays.
 """
         
         try:
