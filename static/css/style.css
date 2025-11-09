@@ -257,6 +257,26 @@ h1 {
     transform: none;
 }
 
+.btn-loading {
+    pointer-events: none;
+    opacity: 0.7;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: wait !important;
+}
+
+.button-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #ffffff;
+    animation: spin 0.75s linear infinite;
+}
+
 .btn-gemini {
     background: linear-gradient(135deg, #4ECDC4 0%, #45B7D1 100%);
     box-shadow: 0 4px 15px rgba(69, 183, 209, 0.35);
@@ -329,37 +349,73 @@ h1 {
 }
 
 .devices-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 15px;
     margin-top: 20px;
 }
 
-.device-card {
-    background: #2a2a2a;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 4px solid #ff6b6b;
+.devices-table-wrapper {
+    overflow-x: auto;
 }
 
-.device-card h4 {
+.devices-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1f1f1f;
+    border-radius: 10px;
+    overflow: hidden;
+    min-width: 520px;
+}
+
+.devices-table thead {
+    background: rgba(78, 205, 196, 0.1);
+}
+
+.devices-table th,
+.devices-table td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.devices-table th {
+    color: #4ECDC4;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+}
+
+.devices-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.device-type-cell {
     color: #ff6b6b;
-    margin-bottom: 10px;
+    font-weight: 600;
 }
 
-.device-info {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 10px;
-    font-size: 0.9em;
+.table-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    margin: 4px 6px 4px 0;
+    border-radius: 999px;
+    background: rgba(78, 205, 196, 0.15);
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    white-space: nowrap;
 }
 
-.device-info .label {
+.table-chip.more-chip {
+    background: rgba(255, 255, 255, 0.08);
     color: #aaa;
 }
 
-.device-info .value {
-    color: #e0e0e0;
+.empty-state {
+    text-align: center;
+    color: #aaa;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
 }
 
 .export-section {

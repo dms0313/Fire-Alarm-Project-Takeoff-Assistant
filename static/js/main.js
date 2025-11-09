@@ -507,25 +507,16 @@ function displayRoboflowResults(data) {
 
     if (devicesGrid) {
         devicesGrid.innerHTML = '';
-        if (Array.isArray(data.page_analyses)) {
-            data.page_analyses.forEach((page) => {
-                if (page && Array.isArray(page.devices)) {
-                    page.devices.forEach((device) => {
-                        if (!device) return;
-                        devicesGrid.innerHTML += `
-                            <div class="device-card">
-                                <h4>${device.device_type || 'Unknown Device'}</h4>
-                                <div class="device-info">
-                                    <span class="label">Location:</span>
-                                    <span class="value">${device.location || 'Unknown'}</span>
-                                    <span class="label">Confidence:</span>
-                                    <span class="value">${device.confidence ? `${(device.confidence * 100).toFixed(1)}%` : 'N/A'}</span>
-                                </div>
-                            </div>
-                        `;
-                    });
-                }
-            });
+        const aggregatedDevices = aggregateDevicesByType(data.page_analyses);
+
+        if (aggregatedDevices.length === 0) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'empty-state';
+            emptyState.textContent = 'No fire alarm devices detected.';
+            devicesGrid.appendChild(emptyState);
+        } else {
+            const table = buildDevicesTable(aggregatedDevices);
+            devicesGrid.appendChild(table);
         }
     }
 
@@ -545,7 +536,7 @@ function displayRoboflowResults(data) {
                     <div class="preview-card-info">${page.devices.length} devices detected</div>
                     <div class="preview-actions">
                         <button class="preview-btn view" onclick="viewPage('${data.job_id}', ${page.page_number})">View</button>
-                        <button class="preview-btn download" onclick="downloadPage('${data.job_id}', ${page.page_number})">Download</button>
+                        <button class="preview-btn download" onclick="downloadPage('${data.job_id}', ${page.page_number}, this)">Download PDF</button>
                     </div>
                 `;
                 previewGrid.appendChild(previewCard);
@@ -558,6 +549,186 @@ function displayRoboflowResults(data) {
             window.location.href = `/api/export/${data.job_id}`;
         };
     }
+}
+
+function aggregateDevicesByType(pageAnalyses = []) {
+    const map = new Map();
+
+    if (!Array.isArray(pageAnalyses)) {
+        return [];
+    }
+
+    pageAnalyses.forEach((page) => {
+        if (!page || !Array.isArray(page.devices)) {
+            return;
+        }
+
+        page.devices.forEach((device) => {
+            if (!device) {
+                return;
+            }
+
+            const deviceType = device.device_type || 'Unknown Device';
+            if (!map.has(deviceType)) {
+                map.set(deviceType, []);
+            }
+
+            map.get(deviceType).push({
+                page: page.page_number ?? device.page_number ?? null,
+                location: device.location || null,
+                confidence: typeof device.confidence === 'number' ? device.confidence : null,
+            });
+        });
+    });
+
+    return Array.from(map.entries())
+        .map(([deviceType, entries]) => {
+            const pageSet = new Set();
+            const locationSet = new Set();
+            const confidenceValues = [];
+
+            entries.forEach((entry) => {
+                if (entry.page !== null && entry.page !== undefined) {
+                    pageSet.add(entry.page);
+                }
+                if (entry.location) {
+                    locationSet.add(entry.location);
+                }
+                if (typeof entry.confidence === 'number') {
+                    confidenceValues.push(entry.confidence);
+                }
+            });
+
+            const sortedPages = Array.from(pageSet).sort((a, b) => a - b);
+            const locations = Array.from(locationSet);
+            const count = entries.length;
+            const avgConfidence =
+                confidenceValues.length > 0
+                    ? confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length
+                    : null;
+            const minConfidence = confidenceValues.length > 0 ? Math.min(...confidenceValues) : null;
+            const maxConfidence = confidenceValues.length > 0 ? Math.max(...confidenceValues) : null;
+
+            return {
+                deviceType,
+                count,
+                pages: sortedPages,
+                locations,
+                avgConfidence,
+                minConfidence,
+                maxConfidence,
+            };
+        })
+        .sort((a, b) => {
+            if (b.count !== a.count) {
+                return b.count - a.count;
+            }
+            return a.deviceType.localeCompare(b.deviceType);
+        });
+}
+
+function buildDevicesTable(groups) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'devices-table-wrapper';
+
+    const table = document.createElement('table');
+    table.className = 'devices-table';
+
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+        <tr>
+            <th scope="col">Device Type</th>
+            <th scope="col">Count</th>
+            <th scope="col">Pages</th>
+            <th scope="col">Locations</th>
+            <th scope="col">Confidence</th>
+        </tr>
+    `;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+
+    groups.forEach((group) => {
+        const row = document.createElement('tr');
+
+        const typeCell = document.createElement('td');
+        typeCell.className = 'device-type-cell';
+        typeCell.textContent = group.deviceType;
+        row.appendChild(typeCell);
+
+        const countCell = document.createElement('td');
+        countCell.textContent = group.count;
+        row.appendChild(countCell);
+
+        const pagesCell = document.createElement('td');
+        if (group.pages.length > 0) {
+            group.pages.forEach((pageNumber) => {
+                pagesCell.appendChild(createChip(`Pg ${pageNumber}`));
+            });
+        } else {
+            pagesCell.textContent = '—';
+        }
+        row.appendChild(pagesCell);
+
+        const locationsCell = document.createElement('td');
+        if (group.locations.length > 0) {
+            const maxVisible = 5;
+            group.locations.slice(0, maxVisible).forEach((location) => {
+                locationsCell.appendChild(createChip(location));
+            });
+
+            if (group.locations.length > maxVisible) {
+                const remainder = group.locations.length - maxVisible;
+                locationsCell.appendChild(createChip(`+${remainder} more`, true));
+            }
+        } else {
+            locationsCell.textContent = '—';
+        }
+        row.appendChild(locationsCell);
+
+        const confidenceCell = document.createElement('td');
+        confidenceCell.textContent = formatConfidenceSummary(group);
+        row.appendChild(confidenceCell);
+
+        tbody.appendChild(row);
+    });
+
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    return wrapper;
+}
+
+function createChip(text, isMore = false) {
+    const chip = document.createElement('span');
+    chip.className = 'table-chip';
+    if (isMore) {
+        chip.classList.add('more-chip');
+    }
+    chip.textContent = text;
+    return chip;
+}
+
+function formatConfidenceSummary(group) {
+    const { avgConfidence, minConfidence, maxConfidence } = group;
+
+    const toPercent = (value) => {
+        const percentage = (value * 100).toFixed(1);
+        return `${percentage.endsWith('.0') ? percentage.slice(0, -2) : percentage}%`;
+    };
+
+    if (typeof avgConfidence !== 'number') {
+        return 'N/A';
+    }
+
+    if (typeof minConfidence === 'number' && typeof maxConfidence === 'number') {
+        const sameValue = Math.abs(maxConfidence - minConfidence) < 0.005;
+        if (sameValue) {
+            return toPercent(avgConfidence);
+        }
+        return `${toPercent(minConfidence)} - ${toPercent(maxConfidence)} (avg ${toPercent(avgConfidence)})`;
+    }
+
+    return toPercent(avgConfidence);
 }
 
 function displayGeminiResults(data) {
@@ -886,7 +1057,7 @@ async function viewPage(jobId, pageNum) {
 
         modalImage.src = URL.createObjectURL(blob);
         modalInfo.textContent = `Page ${pageNum}`;
-        modalDownload.onclick = () => downloadPage(jobId, pageNum);
+        modalDownload.onclick = (event) => downloadPage(jobId, pageNum, event.currentTarget);
         modal.classList.add('active');
         modal.setAttribute('aria-hidden', 'false');
     } catch (error) {
@@ -895,7 +1066,31 @@ async function viewPage(jobId, pageNum) {
     }
 }
 
-async function downloadPage(jobId, pageNum) {
+function setButtonLoadingState(button, isLoading, loadingText = 'Preparing PDF...') {
+    if (!(button instanceof HTMLElement)) {
+        return;
+    }
+
+    if (isLoading) {
+        if (!button.dataset.originalContent) {
+            button.dataset.originalContent = button.innerHTML;
+        }
+        button.disabled = true;
+        button.classList.add('btn-loading');
+        button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span>${loadingText}</span>`;
+    } else {
+        if (button.dataset.originalContent) {
+            button.innerHTML = button.dataset.originalContent;
+            delete button.dataset.originalContent;
+        }
+        button.disabled = false;
+        button.classList.remove('btn-loading');
+    }
+}
+
+async function downloadPage(jobId, pageNum, trigger) {
+    const button = trigger instanceof HTMLElement ? trigger : null;
+    setButtonLoadingState(button, true);
     try {
         const response = await fetch(`/api/download_annotated_pdf/${jobId}/${pageNum}`);
         const contentType = response.headers.get('content-type') || '';
@@ -932,6 +1127,8 @@ async function downloadPage(jobId, pageNum) {
     } catch (error) {
         console.error('Error downloading page:', error);
         alert(error.message || 'Error downloading page. Please try again.');
+    } finally {
+        setButtonLoadingState(button, false);
     }
 }
 
