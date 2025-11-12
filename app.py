@@ -112,8 +112,8 @@ def main() -> None:
     )
 
     if not analyzer.local_detector:
-    logger.info(f"  Local Detector: {'✅ INITIALIZED' if analyzer.roboflow_detector else '❌ NOT INITIALIZED'}")
-    logger.info(f"  Gemini AI: {'✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED'}")
+        logger.info(f"  Local Detector: {'✅ INITIALIZED' if analyzer.roboflow_detector else '❌ NOT INITIALIZED'}")
+        logger.info(f"  Gemini AI: {'✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED'}")
     
     if not analyzer.roboflow_detector:
         logger.error("\n⚠️  WARNING: Local detector is not initialized!")
