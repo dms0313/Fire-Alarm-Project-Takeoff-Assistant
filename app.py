@@ -46,33 +46,28 @@ class FireAlarmAnalyzer:
         self.gemini_analyzer = GeminiFireAlarmAnalyzer() 
         self.visualizer = DetectionVisualizer()
         
-        # Initialize Roboflow if credentials available
+        # Initialize local detector if model available
         self._initialize_roboflow()
-    
+
     def _initialize_roboflow(self):
-        """Initialize Roboflow detector"""
-        logger.info("Checking Roboflow credentials...")
-        
-        if all([config.ROBOFLOW_API_KEY, config.ROBOFLOW_WORKSPACE, config.ROBOFLOW_PROJECT]):
-            try:
-                logger.info("Attempting to initialize Roboflow detector...")
-                self.roboflow_detector = RoboflowDetector(
-                    config.ROBOFLOW_API_KEY,
-                    config.ROBOFLOW_WORKSPACE,
-                    config.ROBOFLOW_PROJECT,
-                    int(config.ROBOFLOW_VERSION)
-                )
-                logger.info("✅ Roboflow detector initialized successfully!")
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize Roboflow: {str(e)}", exc_info=True)
-        else:
-            logger.warning("❌ Roboflow credentials incomplete")
-            if not config.ROBOFLOW_API_KEY:
-                logger.warning("  - ROBOFLOW_API_KEY is missing")
-            if not config.ROBOFLOW_WORKSPACE:
-                logger.warning("  - ROBOFLOW_WORKSPACE is missing")
-            if not config.ROBOFLOW_PROJECT:
-                logger.warning("  - ROBOFLOW_PROJECT is missing")
+        """Initialize local detection model."""
+        logger.info("Checking local detection model...")
+
+        model_path = getattr(config, 'LOCAL_MODEL_PATH', None)
+        if not model_path:
+            logger.error("❌ LOCAL_MODEL_PATH is not configured")
+            return
+
+        if not os.path.exists(model_path):
+            logger.error("❌ Local model file not found at %s", model_path)
+            return
+
+        try:
+            logger.info("Attempting to initialize local detector from %s", model_path)
+            self.roboflow_detector = RoboflowDetector(model_path)
+            logger.info("✅ Local detector initialized successfully!")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize local detector: {str(e)}", exc_info=True)
 
 # Create global analyzer instance
 analyzer = FireAlarmAnalyzer()
@@ -103,13 +98,13 @@ def main():
 
     
     logger.info("\n🤖 Analyzer Status:")
-    logger.info(f"  Roboflow Detector: {'✅ INITIALIZED' if analyzer.roboflow_detector else '❌ NOT INITIALIZED'}")
+    logger.info(f"  Local Detector: {'✅ INITIALIZED' if analyzer.roboflow_detector else '❌ NOT INITIALIZED'}")
     logger.info(f"  Gemini AI: {'✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED'}")
     
     if not analyzer.roboflow_detector:
-        logger.error("\n⚠️  WARNING: Roboflow detector is not initialized!")
+        logger.error("\n⚠️  WARNING: Local detector is not initialized!")
         logger.error("The application will start but detection will not work.")
-        logger.error("Please check your credentials and restart.")
+        logger.error("Please verify the LOCAL_MODEL_PATH setting and restart.")
     else:
         logger.info("\n✅ All systems ready!")
     

@@ -269,10 +269,10 @@ function checkStatus() {
             const roboflowText = document.getElementById('roboflow-text');
             if (data.roboflow_configured) {
                 roboflowDot.className = 'status-dot online';
-                roboflowText.textContent = 'Connected';
+                roboflowText.textContent = 'Ready';
             } else {
                 roboflowDot.className = 'status-dot offline';
-                roboflowText.textContent = 'Not Configured';
+                roboflowText.textContent = 'Model Missing';
             }
 
             const geminiDot = document.getElementById('gemini-status');
@@ -289,10 +289,14 @@ function checkStatus() {
             updateGeminiButtonAvailability();
 
             const modelInfo = document.getElementById('model-info');
-            if (data.roboflow_workspace && data.roboflow_project) {
-                modelInfo.textContent = `${data.roboflow_workspace}/${data.roboflow_project} v${data.roboflow_version}`;
+            if (data.model_path) {
+                // Display only the filename, not the full path
+                const modelFilename = data.model_path.split('/').pop();
+                modelInfo.textContent = modelFilename;
+            } else if (data.roboflow_workspace && data.roboflow_project) {
+                modelInfo.textContent = `${data.roboflow_workspace}/${data.roboflow_project}`;
             } else {
-                modelInfo.textContent = 'Not Connected';
+                modelInfo.textContent = 'No model configured';
             }
         })
         .catch((error) => console.error('Error checking status:', error));
