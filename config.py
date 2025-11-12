@@ -44,7 +44,7 @@ MAX_CACHE_SIZE = 1000
 # FLASK SETTINGS
 # =============================================================================
 MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
-PORT = int(os.environ.get('PORT', 5000))
+PORT = int(os.environ.get('PORT', 5005))
 
 # =============================================================================
 # LOGGING
