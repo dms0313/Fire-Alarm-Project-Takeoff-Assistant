@@ -35,6 +35,7 @@ class FireAlarmAnalyzer:
     def __init__(self):
         self.pdf_processor = PDFProcessor(dpi=config.DPI)
         self.local_detector = None
+        self.local_detector_error: str | None = None
         self.gemini_analyzer = GeminiFireAlarmAnalyzer()
         self.visualizer = DetectionVisualizer()
 
@@ -45,12 +46,16 @@ class FireAlarmAnalyzer:
         """Initialize local detection model if available."""
 
         model_path = getattr(config, 'LOCAL_MODEL_PATH', None)
+        self.local_detector_error = None
+
         if not model_path:
-            logger.error("❌ LOCAL_MODEL_PATH is not configured")
+            self.local_detector_error = "LOCAL_MODEL_PATH is not configured"
+            logger.error("❌ %s", self.local_detector_error)
             return
 
         if not getattr(config, 'LOCAL_MODEL_FOUND', os.path.exists(model_path)):
-            logger.error("❌ Local model file not found at %s", model_path)
+            self.local_detector_error = f"Local model file not found at {model_path}"
+            logger.error("❌ %s", self.local_detector_error)
             search_paths = getattr(config, 'LOCAL_MODEL_SEARCH_PATHS', None)
             if search_paths:
                 logger.info("🔎 Checked the following locations for the local model:")
@@ -66,10 +71,12 @@ class FireAlarmAnalyzer:
             logger.info("Attempting to initialize local detector from %s", model_path)
             self.local_detector = LocalYOLODetector(model_path)
         except Exception as exc:  # pragma: no cover - initialization errors are logged
-            logger.error("❌ Failed to initialize local detector: %s", exc, exc_info=True)
+            self.local_detector_error = f"Failed to initialize local detector: {exc}"
+            logger.error("❌ %s", self.local_detector_error, exc_info=True)
             return
 
         logger.info("✅ Local detector initialized successfully!")
+        self.local_detector_error = None
 
 # Create global analyzer instance
 analyzer = FireAlarmAnalyzer()
@@ -101,21 +108,21 @@ def main() -> None:
         logger.error("Error during config validation: %s", exc)
 
     logger.info("\n🤖 Analyzer Status:")
-    logger.info(
-        "  Local Detector: %s",
-        '✅ INITIALIZED' if analyzer.local_detector else '❌ NOT INITIALIZED',
-    )
-    logger.info(
-        "  Gemini AI: %s",
-        '✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED',
-    )
+    detector_status = '✅ INITIALIZED' if analyzer.local_detector else '❌ NOT INITIALIZED'
+    gemini_status = '✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED'
 
-    if not analyzer.local_detector:
-        logger.info(f"  Local Detector: {'✅ INITIALIZED' if analyzer.local_detector else '❌ NOT INITIALIZED'}")
-        logger.info(f"  Gemini AI: {'✅ CONFIGURED' if analyzer.gemini_analyzer.is_available() else '⚪ NOT CONFIGURED'}")
-    
-    else:
+    logger.info("  Local Detector: %s", detector_status)
+    if not analyzer.local_detector and analyzer.local_detector_error:
+        logger.error("  Local Detector Error: %s", analyzer.local_detector_error)
+
+    logger.info("  Gemini AI: %s", gemini_status)
+
+    if analyzer.local_detector:
         logger.info("\n✅ All systems ready!")
+    else:
+        logger.error(
+            "⚠️  WARNING: Local detector is not initialized! Detection will be disabled."
+        )
 
     print("=" * 70)
     print(f"🌐 Open your browser to: http://localhost:{config.PORT}")
