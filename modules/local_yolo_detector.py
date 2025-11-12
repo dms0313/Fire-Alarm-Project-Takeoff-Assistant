@@ -270,11 +270,10 @@ class LocalYOLODetector:
 
                     if predictions and 'predictions' in predictions:
                         for pred in predictions['predictions']:
+                        # --- START: CORRECTED COORDINATE LOGIC ---
 
-                            # --- START: CORRECTED COORDINATE LOGIC ---
-
-                            # Your desired scale factor for "tighter" boxes
-                            scale_factor = 1.0
+                        # Your desired scale factor for "tighter" boxes
+                        scale_factor = 1.0
 
                             # The YOLO model returns *pixel coordinates* relative
                             # to the tile image (e.g., 640x640).
