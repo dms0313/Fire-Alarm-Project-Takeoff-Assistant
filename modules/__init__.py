@@ -1,6 +1,4 @@
-"""
-Modules Package
-"""
+"""Modules Package"""
 import logging
 
 logger = logging.getLogger(__name__)
@@ -8,6 +6,7 @@ logger = logging.getLogger(__name__)
 # Public interface exposed when importing from ``modules``.
 __all__ = [
     "PDFProcessor",
+    "LocalYOLODetector",
     "RoboflowDetector",
     "DetectionVisualizer",
     "GeminiAnalyzer",
@@ -16,6 +15,7 @@ __all__ = [
 
 try:
     from .pdf_processor import PDFProcessor
+    from .local_yolo_detector import LocalYOLODetector
     from .roboflow_detector import RoboflowDetector
     from .visualizer import DetectionVisualizer
     from .gemini_analyzer import GeminiFireAlarmAnalyzer as GeminiAnalyzer
@@ -29,3 +29,4 @@ except ImportError as exc:
     logger.warning("Unified Gemini analyzer unavailable: %s", exc)
     UnifiedGeminiAnalyzer = None
     __all__.remove("UnifiedGeminiAnalyzer")
+

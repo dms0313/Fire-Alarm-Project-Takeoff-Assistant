@@ -1,12 +1,12 @@
-"""
-Configuration settings for Fire Alarm PDF Analyzer
-"""
-import os
+"""Configuration settings for Fire Alarm PDF Analyzer."""
+
 import logging
+import os
 
 # Load environment variables
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
     print("[CONFIG] Loaded environment variables from .env file")
 except ImportError:
@@ -14,16 +14,21 @@ except ImportError:
 except Exception as e:
     print(f"[CONFIG] Warning: Could not load .env file: {e}")
 
-# =============================================================================
-# API KEYS AND CREDENTIALS
-# =============================================================================
-ROBOFLOW_API_KEY = os.environ.get('ROBOFLOW_API_KEY')
-ROBOFLOW_WORKSPACE = os.environ.get('ROBOFLOW_WORKSPACE', '')
-ROBOFLOW_PROJECT = os.environ.get('ROBOFLOW_PROJECT', '')
-ROBOFLOW_VERSION = os.environ.get('ROBOFLOW_VERSION', '1')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-GEMINI_MODEL = 'gemini-2.5-flash'
+# =============================================================================
+# DETECTION MODEL
+# =============================================================================
+LOCAL_MODEL_PATH = os.environ.get(
+    "LOCAL_MODEL_PATH",
+    os.path.join(BASE_DIR, "models", "best.pt"),
+)
+
+# =============================================================================
+# OPTIONAL SERVICES
+# =============================================================================
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = "gemini-2.5-flash"
 
 # =============================================================================
 # PROCESSING SETTINGS
@@ -53,22 +58,26 @@ LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 def validate_config():
     """Validate configuration and log status"""
     logger = logging.getLogger(__name__)
-    
+
     logger.info("=" * 70)
     logger.info("CONFIGURATION CHECK:")
-    logger.info(f"  Roboflow API Key: {'SET (' + ROBOFLOW_API_KEY[:10] + '...)' if ROBOFLOW_API_KEY else 'NOT SET'}")
-    logger.info(f"  Roboflow Workspace: {ROBOFLOW_WORKSPACE if ROBOFLOW_WORKSPACE else 'NOT SET'}")
-    logger.info(f"  Roboflow Project: {ROBOFLOW_PROJECT if ROBOFLOW_PROJECT else 'NOT SET'}")
-    logger.info(f"  Roboflow Version: {ROBOFLOW_VERSION if ROBOFLOW_VERSION else 'NOT SET'}")
+    logger.info(f"  Local Model Path: {LOCAL_MODEL_PATH}")
+    logger.info(
+        "  Local Model Status: %s",
+        "FOUND" if os.path.exists(LOCAL_MODEL_PATH) else "NOT FOUND",
+    )
     logger.info(f"  Gemini API Key: {'SET' if GEMINI_API_KEY else 'NOT SET (optional)'}")
     logger.info("=" * 70)
-    
-    # Check for required Roboflow credentials
-    roboflow_configured = all([ROBOFLOW_API_KEY, ROBOFLOW_WORKSPACE, ROBOFLOW_PROJECT])
-    if not roboflow_configured:
-        logger.warning("⚠️  Roboflow credentials incomplete - detection will be disabled")
-    
+
+    # Check for local model availability
+    model_available = os.path.exists(LOCAL_MODEL_PATH)
+    if not model_available:
+        logger.warning(
+            "⚠️  Local detection model not found - detection will be disabled"
+        )
+
     return {
-        'roboflow_configured': roboflow_configured,
+        'local_model_configured': model_available,
+        'local_model_filename': os.path.basename(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH else '',
         'gemini_configured': bool(GEMINI_API_KEY)
     }
