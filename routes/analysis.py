@@ -39,17 +39,19 @@ def register_analysis_routes(app, analyzer):
     @app.route("/api/check_status", methods=["GET"])
     def check_status():
         """Check API status and configuration"""
+        local_model_path = getattr(config, 'LOCAL_MODEL_PATH', '')
+        local_model_name = os.path.splitext(os.path.basename(local_model_path))[0] if local_model_path else ''
+
         return jsonify({
-            'roboflow_configured': analyzer.roboflow_detector is not None,
+            'local_model_configured': analyzer.local_detector is not None,
             'gemini_configured': analyzer.gemini_analyzer.is_available(),
-            'roboflow_workspace': config.ROBOFLOW_WORKSPACE,
-            'roboflow_project': config.ROBOFLOW_PROJECT,
-            'roboflow_version': config.ROBOFLOW_VERSION
+            'local_model_name': local_model_name,
+            'model_path': local_model_path
         })
     
     @app.route("/api/analyze", methods=["POST"])
     def analyze_pdf():
-        """Analyze uploaded PDF with Roboflow detection"""
+        """Analyze uploaded PDF with local detection"""
         if 'pdf' not in request.files:
             return jsonify({'success': False, 'error': 'No PDF file provided'}), 400
         
@@ -86,7 +88,7 @@ def register_analysis_routes(app, analyzer):
             logger.info(f"Starting analysis job {job_id}")
             
             # Run analysis
-            results = _run_roboflow_analysis(
+            results = _run_local_detection_analysis(
                 analyzer,
                 pdf_path,
                 skip_blank,
@@ -215,7 +217,7 @@ def register_analysis_routes(app, analyzer):
                 return send_file(img_io, mimetype='image/jpeg')
             
             # Run detection
-            detections, _ = analyzer.roboflow_detector.process_all_tiles_parallel(
+            detections, _ = analyzer.local_detector.process_all_tiles_parallel(
                 tiles, config.DEFAULT_CONFIDENCE, config.MAX_WORKERS, use_cache=True
             )
             
@@ -256,11 +258,11 @@ def register_analysis_routes(app, analyzer):
         )
 
 
-def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges, 
-                           use_parallel, use_cache, confidence, selected_pages):
-    """Run Roboflow analysis on PDF"""
-    if not analyzer.roboflow_detector:
-        return {'success': False, 'error': 'Roboflow detector not initialized'}
+def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
+                                  use_parallel, use_cache, confidence, selected_pages=None):
+    """Run local model analysis on PDF"""
+    if not analyzer.local_detector:
+        return {'success': False, 'error': 'Local detector not initialized'}
     
     try:
         # Convert PDF to images
@@ -306,11 +308,11 @@ def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges,
             
             # Run detection
             if use_parallel:
-                detections, proc_stats = analyzer.roboflow_detector.process_all_tiles_parallel(
+                detections, proc_stats = analyzer.local_detector.process_all_tiles_parallel(
                     tiles, confidence, config.MAX_WORKERS, use_cache
                 )
             else:
-                detections, proc_stats = analyzer.roboflow_detector.process_all_tiles_sequential(
+                detections, proc_stats = analyzer.local_detector.process_all_tiles_sequential(
                     tiles, confidence, use_cache
                 )
             
@@ -359,7 +361,7 @@ def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges,
             'device_summary': _summarize_devices(total_devices),
             'page_analyses': page_analyses,
             'processing_stats': {
-                'cache_stats': analyzer.roboflow_detector.cache.get_stats(),
+                'cache_stats': analyzer.local_detector.cache.get_stats(),
                 'optimizations_used': {
                     'skip_blank_tiles': skip_blank,
                     'skip_edge_tiles': skip_edges,
@@ -372,7 +374,7 @@ def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges,
         return results
         
     except Exception as e:
-        logger.error(f"Error in Roboflow analysis: {str(e)}", exc_info=True)
+        logger.error(f"Error in local model analysis: {str(e)}", exc_info=True)
         return {'success': False, 'error': str(e)}
 
 

@@ -100,7 +100,7 @@ function setupUploadInteractions() {
     }
 
     if (analyzeBtn) {
-        analyzeBtn.addEventListener('click', () => startAnalysis('roboflow'));
+        analyzeBtn.addEventListener('click', () => startAnalysis('local'));
     }
 
     if (startGeminiBtn) {
@@ -173,7 +173,7 @@ function handleFiles(files) {
     updateGeminiButtonAvailability();
 
     resetGeminiUI();
-    hideRoboflowResults();
+    hideDetectionResults();
 
     generatePagePreviews(file);
 }
@@ -200,7 +200,7 @@ function showError(message) {
     }
     updateGeminiButtonAvailability();
     resetGeminiUI();
-    hideRoboflowResults();
+    hideDetectionResults();
     if (pageSelection) {
         pageSelection.style.display = 'none';
     }
@@ -239,7 +239,7 @@ function updateGeminiButtonAvailability() {
     }
 }
 
-function hideRoboflowResults() {
+function hideDetectionResults() {
     if (resultsSection) {
         resultsSection.style.display = 'none';
     }
@@ -265,14 +265,16 @@ function checkStatus() {
     fetch('/api/check_status')
         .then((response) => response.json())
         .then((data) => {
-            const roboflowDot = document.getElementById('roboflow-status');
-            const roboflowText = document.getElementById('roboflow-text');
-            if (data.roboflow_configured) {
-                roboflowDot.className = 'status-dot online';
-                roboflowText.textContent = 'Connected';
-            } else {
-                roboflowDot.className = 'status-dot offline';
-                roboflowText.textContent = 'Not Configured';
+            const detectorDot = document.getElementById('local-model-status');
+            const detectorText = document.getElementById('local-model-text');
+            if (detectorDot && detectorText) {
+                if (data.local_model_configured) {
+                    detectorDot.className = 'status-dot online';
+                    detectorText.textContent = 'Ready';
+                } else {
+                    detectorDot.className = 'status-dot offline';
+                    detectorText.textContent = 'Model Missing';
+                }
             }
 
             const geminiDot = document.getElementById('gemini-status');
@@ -289,10 +291,16 @@ function checkStatus() {
             updateGeminiButtonAvailability();
 
             const modelInfo = document.getElementById('model-info');
-            if (data.roboflow_workspace && data.roboflow_project) {
-                modelInfo.textContent = `${data.roboflow_workspace}/${data.roboflow_project} v${data.roboflow_version}`;
-            } else {
-                modelInfo.textContent = 'Not Connected';
+            if (modelInfo) {
+                if (data.model_path) {
+                    const pathParts = data.model_path.split(/[/\\]/);
+                    const modelFilename = pathParts[pathParts.length - 1];
+                    modelInfo.textContent = modelFilename || 'No model configured';
+                } else if (data.local_model_name) {
+                    modelInfo.textContent = data.local_model_name;
+                } else {
+                    modelInfo.textContent = 'No model configured';
+                }
             }
         })
         .catch((error) => console.error('Error checking status:', error));
@@ -382,7 +390,7 @@ function startAnalysis(type) {
 
     let endpoint = '';
 
-    if (type === 'roboflow') {
+    if (type === 'local') {
         const selectedPages = Array.from(document.querySelectorAll('.page-thumb.selected')).map((thumb) =>
             parseInt(thumb.querySelector('.page-number').textContent.replace('Page ', ''), 10)
         );
@@ -409,7 +417,7 @@ function startAnalysis(type) {
             progressSection.style.display = 'block';
             progressFill.style.width = '0%';
             progressFill.style.background = 'linear-gradient(90deg, #4ECDC4 0%, #45B7D1 100%)';
-            progressText.textContent = 'Starting analysis...';
+            progressText.textContent = 'Starting local analysis...';
         }
 
         if (analyzeBtn) {
@@ -442,14 +450,14 @@ function startAnalysis(type) {
                 throw new Error(data.error || 'Analysis failed');
             }
 
-            if (type === 'roboflow') {
-                displayRoboflowResults(data);
+            if (type === 'local') {
+                displayDetectionResults(data);
             } else {
                 displayGeminiResults(data);
             }
         })
         .catch((error) => {
-            if (type === 'roboflow') {
+            if (type === 'local') {
                 if (progressText && progressFill) {
                     progressText.textContent = `Error: ${error.message}`;
                     progressFill.style.width = '100%';
@@ -460,7 +468,7 @@ function startAnalysis(type) {
             }
         })
         .finally(() => {
-            if (type === 'roboflow') {
+            if (type === 'local') {
                 if (analyzeBtn) {
                     analyzeBtn.disabled = false;
                 }
@@ -470,7 +478,7 @@ function startAnalysis(type) {
         });
 }
 
-function displayRoboflowResults(data) {
+function displayDetectionResults(data) {
     currentJobId = data.job_id || null;
 
     if (progressFill && progressText) {

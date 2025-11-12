@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 # Public interface exposed when importing from ``modules``.
 __all__ = [
     "PDFProcessor",
-    "RoboflowDetector",
+    "LocalYOLODetector",
     "DetectionVisualizer",
     "GeminiAnalyzer",
     "UnifiedGeminiAnalyzer",
@@ -16,7 +16,7 @@ __all__ = [
 
 try:
     from .pdf_processor import PDFProcessor
-    from .roboflow_detector import RoboflowDetector
+    from .local_yolo_detector import LocalYOLODetector
     from .visualizer import DetectionVisualizer
     from .gemini_analyzer import GeminiFireAlarmAnalyzer as GeminiAnalyzer
 except ImportError as exc:
