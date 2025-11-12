@@ -43,28 +43,33 @@ class FireAlarmAnalyzer:
 
     def _initialize_local_detector(self) -> None:
         """Initialize local detection model if available."""
-        
-        # Initialize local detector if model available
-        self._initialize_roboflow()
 
         model_path = getattr(config, 'LOCAL_MODEL_PATH', None)
         if not model_path:
             logger.error("❌ LOCAL_MODEL_PATH is not configured")
             return
 
-        if not os.path.exists(model_path):
+        if not getattr(config, 'LOCAL_MODEL_FOUND', os.path.exists(model_path)):
             logger.error("❌ Local model file not found at %s", model_path)
+            search_paths = getattr(config, 'LOCAL_MODEL_SEARCH_PATHS', None)
+            if search_paths:
+                logger.info("🔎 Checked the following locations for the local model:")
+                for candidate in search_paths:
+                    status = '✅ found' if os.path.exists(candidate) else '❌ missing'
+                    logger.info("    %s — %s", candidate, status)
+            logger.info(
+                "Set the LOCAL_MODEL_PATH environment variable to point to your model file."
+            )
             return
 
         try:
             logger.info("Attempting to initialize local detector from %s", model_path)
             self.local_detector = LocalYOLODetector(model_path)
-            logger.info("✅ Local detector initialized successfully!")
         except Exception as exc:  # pragma: no cover - initialization errors are logged
             logger.error("❌ Failed to initialize local detector: %s", exc, exc_info=True)
-            logger.info("✅ Local detector initialized successfully!")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize local detector: {str(e)}", exc_info=True)
+            return
+
+        logger.info("✅ Local detector initialized successfully!")
 
 # Create global analyzer instance
 analyzer = FireAlarmAnalyzer()
