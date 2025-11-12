@@ -4,16 +4,16 @@ Handles AI-powered analysis of fire alarm specifications using Google's Gemini A
 """
 
 import logging
-import os
 import json
 import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+
 import google.generativeai as genai
 
 # Corrected relative import for your module structure
 from .pdf_processor import PDFProcessor
-from config import GEMINI_API_KEY, GEMINI_MODEL # Assumes GEMINI_MODEL is in config
+from config import GEMINI_API_KEY, GEMINI_MODEL
 
 logger = logging.getLogger("fire-alarm-analyzer")
 
@@ -40,6 +40,17 @@ class GeminiFireAlarmAnalyzer:
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
         return self.model is not None
+
+    # ------------------------------------------------------------------
+    # Compatibility helpers (resolve interface drift between versions)
+    # ------------------------------------------------------------------
+    def extract_pdf_text(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """Proxy to PDFProcessor.extract_text_from_pdf for legacy callers."""
+        return self.pdf_processor.extract_text_from_pdf(pdf_path)
+
+    def analyze_pdf_text(self, pdf_path: str) -> Dict[str, Any]:
+        """Maintain backward compatibility with older analyzer API."""
+        return self.analyze_pdf(pdf_path)
 
     @staticmethod
     def _parse_json(raw_text: str, default: Any) -> Any:
