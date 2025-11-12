@@ -9,7 +9,6 @@ __all__ = [
     "LocalYOLODetector",
     "DetectionVisualizer",
     "GeminiAnalyzer",
-    "UnifiedGeminiAnalyzer",
 ]
 
 try:
@@ -21,9 +20,4 @@ except ImportError as exc:
     logger.error("Error importing core modules: %s", exc, exc_info=True)
     raise
 
-try:
-    from .gemini_analyzer_unified import GeminiAnalyzer as UnifiedGeminiAnalyzer
-except ImportError as exc:
-    logger.warning("Unified Gemini analyzer unavailable: %s", exc)
-    UnifiedGeminiAnalyzer = None
-    __all__.remove("UnifiedGeminiAnalyzer")
+UnifiedGeminiAnalyzer = None  # Backwards compatibility placeholder
