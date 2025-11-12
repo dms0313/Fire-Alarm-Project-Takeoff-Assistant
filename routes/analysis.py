@@ -50,6 +50,7 @@ def register_analysis_routes(app, analyzer):
             'gemini_configured': analyzer.gemini_analyzer.is_available(),
             'local_model_name': model_name,
             'local_model_filename': model_filename,
+            'local_detector_error': analyzer.local_detector_error,
         }
 
         if expose_model_path:
