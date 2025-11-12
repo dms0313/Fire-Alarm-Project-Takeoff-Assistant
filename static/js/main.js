@@ -292,12 +292,14 @@ function checkStatus() {
 
             const modelInfo = document.getElementById('model-info');
             if (modelInfo) {
-                if (data.model_path) {
+                if (data.local_model_filename) {
+                    modelInfo.textContent = data.local_model_filename;
+                } else if (data.local_model_name) {
+                    modelInfo.textContent = data.local_model_name;
+                } else if (data.model_path) {
                     const pathParts = data.model_path.split(/[/\\]/);
                     const modelFilename = pathParts[pathParts.length - 1];
                     modelInfo.textContent = modelFilename || 'No model configured';
-                } else if (data.local_model_name) {
-                    modelInfo.textContent = data.local_model_name;
                 } else {
                     modelInfo.textContent = 'No model configured';
                 }

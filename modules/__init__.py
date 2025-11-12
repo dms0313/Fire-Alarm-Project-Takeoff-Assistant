@@ -1,6 +1,4 @@
-"""
-Modules Package
-"""
+"""Modules Package"""
 import logging
 
 logger = logging.getLogger(__name__)

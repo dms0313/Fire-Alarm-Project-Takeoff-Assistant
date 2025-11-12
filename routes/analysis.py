@@ -36,19 +36,30 @@ def register_analysis_routes(app, analyzer):
             html_content = f.read()
         return render_template_string(html_content)
     
+
     @app.route("/api/check_status", methods=["GET"])
     def check_status():
         """Check API status and configuration"""
-        local_model_path = getattr(config, 'LOCAL_MODEL_PATH', '')
-        local_model_name = os.path.splitext(os.path.basename(local_model_path))[0] if local_model_path else ''
+        local_model_path = getattr(config, 'LOCAL_MODEL_PATH', '') or ''
+        model_filename = os.path.basename(local_model_path) if local_model_path else ''
+        model_name = os.path.splitext(model_filename)[0] if model_filename else ''
+        expose_model_path = os.environ.get('EXPOSE_MODEL_PATH', '').lower() in {"1", "true", "yes"}
 
-        return jsonify({
+        response = {
             'local_model_configured': analyzer.local_detector is not None,
             'gemini_configured': analyzer.gemini_analyzer.is_available(),
-            'local_model_name': local_model_name,
-            'model_path': local_model_path
-        })
-    
+            'local_model_name': model_name,
+            'local_model_filename': model_filename,
+        }
+
+        if expose_model_path:
+            response['local_model_path'] = local_model_path
+            response['model_path'] = local_model_path  # legacy alias
+        else:
+            response['local_model_path'] = None
+            response['model_path'] = None
+
+        return jsonify(response)
     @app.route("/api/analyze", methods=["POST"])
     def analyze_pdf():
         """Analyze uploaded PDF with local detection"""

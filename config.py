@@ -78,5 +78,6 @@ def validate_config():
 
     return {
         'local_model_configured': model_available,
+        'local_model_filename': os.path.basename(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH else '',
         'gemini_configured': bool(GEMINI_API_KEY)
     }
