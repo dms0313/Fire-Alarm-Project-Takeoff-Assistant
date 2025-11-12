@@ -24,12 +24,6 @@ LOCAL_MODEL_PATH = os.environ.get(
     os.path.join(BASE_DIR, "models", "best.pt"),
 )
 
-# Backwards compatibility for UI fields that previously displayed Roboflow data
-ROBOFLOW_API_KEY = None
-ROBOFLOW_WORKSPACE = "Local"
-ROBOFLOW_PROJECT = os.path.splitext(os.path.basename(LOCAL_MODEL_PATH))[0] or "model"
-ROBOFLOW_VERSION = "local"
-
 # =============================================================================
 # OPTIONAL SERVICES
 # =============================================================================
@@ -83,6 +77,7 @@ def validate_config():
         )
 
     return {
-        'roboflow_configured': model_available,
+        'local_model_configured': model_available,
+        'local_model_filename': os.path.basename(LOCAL_MODEL_PATH) if LOCAL_MODEL_PATH else '',
         'gemini_configured': bool(GEMINI_API_KEY)
     }

@@ -265,102 +265,14 @@ class RoboflowDetector:
                                 tile_width = pred['width']
                                 tile_height = pred['height']
 
-                                # Apply your desired 0.6 scaling to the *pixel dimensions*
-                                scaled_width = max(20, int(tile_width * scale_factor))
-                                scaled_height = max(20, int(tile_height * scale_factor))
-                                
-                                # Adjust to full image space by adding the tile's offset
-                                # to the box's center coordinate within the tile.
-                                pred['x'] = tile['x'] + tile_center_x
-                                pred['y'] = tile['y'] + tile_center_y
-                                pred['width'] = scaled_width
-                                pred['height'] = scaled_height
-                                
-                                # --- END: CORRECTED COORDINATE LOGIC ---
+    The project now uses a local YOLO model instead of the Roboflow API. This
+    class simply extends :class:`LocalYOLODetector` so existing imports
+    (`from modules.roboflow_detector import RoboflowDetector`) continue to work.
+    A deprecation warning is emitted to remind developers to migrate to the new
+    `LocalYOLODetector` name.
+    """
 
-                                pred['tile_id'] = tile['id']
-                                all_detections.append(pred)
-                        
-                        # Check early stopping
-                        if early_stop_count and len(all_detections) >= early_stop_count:
-                            logger.info(f"Early stopping: Found {len(all_detections)} objects")
-                            early_stopped = True
-                            for f in future_to_tile:
-                                if not f.done():
-                                    f.cancel()
-                            break
-                    
-                    except Exception as e:
-                        logger.warning(f"Error processing tile {tile['id']}: {str(e)}")
-            
-            processing_time = time.time() - start_time
-            cache_stats = self.cache.get_stats()
-            
-            stats = {
-                'processed': processed,
-                'total_time': processing_time,
-                'cache_hits': cache_stats['hits'],
-                'cache_misses': cache_stats['misses'],
-                'cache_hit_rate': cache_stats['hit_rate'],
-                'early_stopped': early_stopped,
-                'objects_found': len(all_detections)
-            }
-            
-            return all_detections, stats
-    
-    def process_all_tiles_sequential(self, tiles: List[Dict], confidence: float = DEFAULT_CONFIDENCE,
-                                    use_cache: bool = True,
-                                    early_stop_count: Optional[int] = None) -> Tuple[List[Dict], Dict]:
-        """
-        Process tiles sequentially with optional early stopping
-        
-        Args:
-            tiles: List of tile dictionaries
-            confidence: Detection confidence threshold
-            use_cache: Whether to use cached results
-            early_stop_count: Stop after finding this many objects
-        
-        Returns:
-            Tuple of (all_detections, processing_stats)
-        """
-        all_detections = []
-        start_time = time.time()
-        processed = 0
-        early_stopped = False
-        
-        for tile in tiles:
-            try:
-                predictions = self.detect_on_tile(tile['image'], confidence, use_cache)
-                processed += 1
-                
-                if predictions and 'predictions' in predictions:
-                    for pred in predictions['predictions']:
-                        # Adjust coordinates to full image space
-                        pred['x'] += tile['x']
-                        pred['y'] += tile['y']
-                        pred['tile_id'] = tile['id']
-                        all_detections.append(pred)
-                
-                # Check early stopping
-                if early_stop_count and len(all_detections) >= early_stop_count:
-                    logger.info(f"Early stopping: Found {len(all_detections)} objects")
-                    early_stopped = True
-                    break
-            
-            except Exception as e:
-                logger.warning(f"Error processing tile {tile['id']}: {str(e)}")
-        
-        processing_time = time.time() - start_time
-        cache_stats = self.cache.get_stats()
-        
-        stats = {
-            'processed': processed,
-            'total_time': processing_time,
-            'cache_hits': cache_stats['hits'],
-            'cache_misses': cache_stats['misses'],
-            'cache_hit_rate': cache_stats['hit_rate'],
-            'early_stopped': early_stopped,
-            'objects_found': len(all_detections)
-        }
-        
-        return all_detections, stats
+    def __init__(self, *args, **kwargs):
+        logger.warning(
+            "RoboflowDetector is deprecated. Use LocalYOLODetector instead.")
+        super().__init__(*args, **kwargs)
