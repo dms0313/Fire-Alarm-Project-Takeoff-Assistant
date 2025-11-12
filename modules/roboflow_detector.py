@@ -160,7 +160,13 @@ class RoboflowDetector:
             if not self.model:
                 raise RuntimeError("Detection model is not initialized")
 
-            confidence = max(0.0, min(1.0, confidence or DEFAULT_CONFIDENCE))
+            raw_confidence = confidence if confidence is not None else DEFAULT_CONFIDENCE
+            if not (0.0 <= raw_confidence <= 1.0):
+                import logging
+                logging.warning(
+                    f"Confidence value {raw_confidence} is out of bounds [0, 1]. Clamping to valid range."
+                )
+            confidence = max(0.0, min(1.0, raw_confidence))
 
             results = self.model.predict(
                 tile_image,
