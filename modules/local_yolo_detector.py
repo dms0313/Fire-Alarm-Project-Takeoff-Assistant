@@ -1,4 +1,43 @@
 """Local detection module that runs object detection using a YOLO model."""
+# --- PyTorch 2.6 Safe Loading Patch for YOLO & Core Torch Modules ---
+import torch.serialization
+from ultralytics.nn import tasks
+from ultralytics.nn.modules import conv as yconv, head as yhead, block as yblock
+from ultralytics.nn.modules.conv import Concat
+from ultralytics.nn.modules.block import DFL  # 👈 add this new one
+import torch.nn as nn
+import torch.nn.modules.container as container
+
+torch.serialization.add_safe_globals([
+    # Ultralytics YOLO architecture
+    tasks.DetectionModel,
+    yconv.Conv,
+    yhead.Detect,
+    yblock.C2f,
+    yblock.Bottleneck,
+    yblock.C3,
+    yblock.SPPF,
+    Concat,
+    DFL,  # 👈 this is the last missing module
+
+    # PyTorch core layers
+    container.Sequential,
+    container.ModuleList,
+    container.ModuleDict,
+    nn.Conv2d,
+    nn.BatchNorm2d,
+    nn.SiLU,
+    nn.ReLU,
+    nn.LeakyReLU,
+    nn.Identity,
+    nn.Upsample,
+    nn.MaxPool2d,
+    nn.AvgPool2d,
+    nn.AdaptiveAvgPool2d,
+    nn.Dropout,
+    nn.Flatten,
+])
+# --- End Safe Loading Patch ---
 
 import copy
 import logging
