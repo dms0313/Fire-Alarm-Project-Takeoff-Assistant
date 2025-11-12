@@ -44,12 +44,13 @@ def register_analysis_routes(app, analyzer):
             'gemini_configured': analyzer.gemini_analyzer.is_available(),
             'roboflow_workspace': config.ROBOFLOW_WORKSPACE,
             'roboflow_project': config.ROBOFLOW_PROJECT,
-            'roboflow_version': config.ROBOFLOW_VERSION
+            'roboflow_version': config.ROBOFLOW_VERSION,
+            'model_path': getattr(config, 'LOCAL_MODEL_PATH', '')
         })
     
     @app.route("/api/analyze", methods=["POST"])
     def analyze_pdf():
-        """Analyze uploaded PDF with Roboflow detection"""
+        """Analyze uploaded PDF with local detection"""
         if 'pdf' not in request.files:
             return jsonify({'success': False, 'error': 'No PDF file provided'}), 400
         
@@ -256,11 +257,11 @@ def register_analysis_routes(app, analyzer):
         )
 
 
-def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges, 
+def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges,
                            use_parallel, use_cache, confidence, selected_pages):
-    """Run Roboflow analysis on PDF"""
+    """Run local model analysis on PDF"""
     if not analyzer.roboflow_detector:
-        return {'success': False, 'error': 'Roboflow detector not initialized'}
+        return {'success': False, 'error': 'Local detector not initialized'}
     
     try:
         # Convert PDF to images
@@ -372,7 +373,7 @@ def _run_roboflow_analysis(analyzer, pdf_path, skip_blank, skip_edges,
         return results
         
     except Exception as e:
-        logger.error(f"Error in Roboflow analysis: {str(e)}", exc_info=True)
+        logger.error(f"Error in local model analysis: {str(e)}", exc_info=True)
         return {'success': False, 'error': str(e)}
 
 

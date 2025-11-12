@@ -1,10 +1,9 @@
-"""
-Roboflow Detection Module - Handles object detection via Roboflow API
-"""
+"""Local detection module that runs object detection using a YOLO model."""
+
+import copy
 import logging
 import os
 import time
-import tempfile
 import threading
 import hashlib
 from typing import Optional, Dict, List, Tuple
@@ -12,9 +11,20 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
-from roboflow import Roboflow
+from ultralytics import YOLO
 
-from config import DEFAULT_CONFIDENCE, MAX_WORKERS, MAX_CACHE_SIZE, TILE_SIZE
+from config import (
+    DEFAULT_CONFIDENCE,
+    LOCAL_MODEL_PATH,
+    MAX_WORKERS,
+    MAX_CACHE_SIZE,
+    TILE_SIZE,
+)
+
+try:
+    import torch
+except Exception:  # pragma: no cover - torch is optional at import time
+    torch = None
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +50,14 @@ class TileCache:
             if tile_hash in self.cache:
                 self.hits += 1
                 self.cache.move_to_end(tile_hash)  # Mark as recently used
-                return self.cache[tile_hash]
+                return copy.deepcopy(self.cache[tile_hash])
             self.misses += 1
             return None
-    
+
     def set(self, tile_hash: str, result: Dict):
         """Cache result for a tile, evict LRU if over max size"""
         with self.lock:
-            self.cache[tile_hash] = result
+            self.cache[tile_hash] = copy.deepcopy(result)
             self.cache.move_to_end(tile_hash)
             if len(self.cache) > self.max_size:
                 self.cache.popitem(last=False)  # Remove least recently used
@@ -74,81 +84,64 @@ class TileCache:
 
 
 class RoboflowDetector:
-    """Roboflow API wrapper with caching and parallel processing"""
-    
-    def __init__(self, api_key: str, workspace: str, project: str, version: int):
-        self.api_key = api_key
-        self.workspace = workspace
-        self.project = project
-        self.version = version
+    """Local detection wrapper with caching and parallel processing."""
+
+    def __init__(self, model_path: str = LOCAL_MODEL_PATH, device: Optional[str] = None):
+        self.model_path = model_path
+        self.device = device or self._select_device()
         self.model = None
         self.cache = TileCache()
+        self.class_names: Dict[int, str] = {}
         self._initialize_model()
-    
-    def _initialize_model(self):
-        """Initialize Roboflow model with retries and validation"""
-        max_retries = 3
-        retry_delay = 2  # seconds
-        
-        for attempt in range(max_retries):
+
+    def _select_device(self) -> str:
+        """Select the best available device for inference."""
+        if device := os.environ.get("DETECTOR_DEVICE"):
+            return device
+
+        if torch is not None:
             try:
-                # Validate inputs
-                if not self.api_key or not isinstance(self.api_key, str):
-                    raise ValueError("Invalid API key")
-                
-                logger.info(f"Initializing Roboflow (attempt {attempt + 1}/{max_retries})")
-                logger.info(f"Workspace: {self.workspace}, Project: {self.project}, Version: {self.version}")
-                
-                # Create client
-                rf = Roboflow(api_key=self.api_key)
-                logger.info("Roboflow client created")
-                
-                # Test API key
-                try:
-                    workspace = rf.workspace(self.workspace)
-                    logger.info("API key validated successfully")
-                except Exception as api_err:
-                    logger.error(f"API key validation failed: {str(api_err)}")
-                    raise ValueError("Invalid API key or permissions") from api_err
-                
-                # Get project
-                project = workspace.project(self.project)
-                if not project:
-                    raise ValueError(f"Project not found: {self.project}")
-                logger.info(f"Project accessed: {self.project}")
-                
-                # Get model version
-                self.model = project.version(self.version).model
-                if not self.model:
-                    raise ValueError(f"Model version not found: {self.version}")
-                
-                # Validate model
-                if not hasattr(self.model, 'predict'):
-                    raise ValueError("Model loaded but predict method not found")
-                
-                logger.info(f"✅ Model initialized: {self.workspace}/{self.project}/{self.version}")
-                return
-                
-            except Exception as e:
-                logger.error(f"❌ Attempt {attempt + 1} failed: {str(e)}")
-                if attempt < max_retries - 1:
-                    logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
-                else:
-                    logger.error("All initialization attempts failed")
-                    raise RuntimeError(f"Failed to initialize Roboflow after {max_retries} attempts") from e
-    
-    def detect_on_tile(self, tile_image: Image.Image, confidence: float = DEFAULT_CONFIDENCE,
-                    use_cache: bool = True) -> Optional[Dict]:
+                if torch.cuda.is_available():
+                    return "cuda"
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                    return "mps"
+            except Exception:
+                logger.debug("Torch available but device query failed, defaulting to CPU", exc_info=True)
+
+        return "cpu"
+
+    def _initialize_model(self):
+        """Load the local YOLO model from disk."""
+        if not self.model_path:
+            raise ValueError("Model path must be provided for local detection")
+
+        if not os.path.exists(self.model_path):
+            raise FileNotFoundError(f"Model file not found at {self.model_path}")
+
+        logger.info("Loading local detection model from %s", self.model_path)
+
+        try:
+            self.model = YOLO(self.model_path)
+            self.class_names = self.model.names or {}
+            logger.info("✅ Local detection model loaded successfully (%s)", self.device)
+        except Exception as exc:
+            logger.error("❌ Failed to load local detection model: %s", exc, exc_info=True)
+            raise
+
+    def detect_on_tile(
+        self,
+        tile_image: Image.Image,
+        confidence: float = DEFAULT_CONFIDENCE,
+        use_cache: bool = True,
+    ) -> Optional[Dict]:
         """
         Run detection on a single tile with optional caching
-        
+
         Args:
             tile_image: PIL Image tile
             confidence: Detection confidence threshold
             use_cache: Whether to use cached results
-        
+
         Returns:
             Predictions dict or None if error
         """
@@ -158,33 +151,56 @@ class RoboflowDetector:
             cached_result = self.cache.get(tile_hash)
             if cached_result is not None:
                 return cached_result
-        
+
         if not tile_image or not isinstance(tile_image, Image.Image):
             logger.error("Invalid tile image provided")
             return None
-        
+
         try:
-            # Save tile to temporary file (Roboflow requires file path)
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
-                tile_image.save(tmp_file.name, format='JPEG', quality=95)
-                temp_path = tmp_file.name
-            
-            try:
-                # Run prediction
-                predictions = self.model.predict(temp_path, confidence=int(confidence * 100))
-                result = predictions.json()
-                
-                # Cache result
-                if use_cache:
-                    tile_hash = self.cache.get_tile_hash(tile_image)
-                    self.cache.set(tile_hash, result)
-                
-                return result
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-        
+            if not self.model:
+                raise RuntimeError("Detection model is not initialized")
+
+            confidence = max(0.0, min(1.0, confidence or DEFAULT_CONFIDENCE))
+
+            results = self.model.predict(
+                tile_image,
+                conf=confidence,
+                device=self.device,
+                verbose=False,
+            )
+
+            predictions: List[Dict] = []
+            for result in results:
+                boxes = getattr(result, "boxes", None)
+                if boxes is None:
+                    continue
+
+                xywh = boxes.xywh.cpu().tolist()
+                confidences = boxes.conf.cpu().tolist()
+                classes = boxes.cls.cpu().tolist()
+
+                for (x, y, w, h), conf_score, cls_idx in zip(xywh, confidences, classes):
+                    class_id = int(cls_idx)
+                    predictions.append(
+                        {
+                            'x': float(x),
+                            'y': float(y),
+                            'width': float(w),
+                            'height': float(h),
+                            'confidence': float(conf_score),
+                            'class': self.class_names.get(class_id, str(class_id)),
+                            'class_id': class_id,
+                        }
+                    )
+
+            result = {'predictions': predictions}
+
+            if use_cache:
+                tile_hash = self.cache.get_tile_hash(tile_image)
+                self.cache.set(tile_hash, result)
+
+            return copy.deepcopy(result)
+
         except Exception as e:
             logger.error(f"Error during detection: {str(e)}")
             return None
@@ -233,7 +249,7 @@ class RoboflowDetector:
                                 # Your desired scale factor for "tighter" boxes
                                 scale_factor = 1.0
                                 
-                                # The Roboflow package returns *pixel coordinates* relative
+                                # The YOLO model returns *pixel coordinates* relative
                                 # to the tile image (e.g., 640x640).
                                 # NO normalization (/ 100.0) or ( * TILE_SIZE) is needed here.
                                 
