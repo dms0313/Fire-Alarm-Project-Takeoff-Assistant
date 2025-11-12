@@ -290,7 +290,9 @@ function checkStatus() {
 
             const modelInfo = document.getElementById('model-info');
             if (data.model_path) {
-                modelInfo.textContent = data.model_path;
+                // Display only the filename, not the full path
+                const modelFilename = data.model_path.split('/').pop();
+                modelInfo.textContent = modelFilename;
             } else if (data.roboflow_workspace && data.roboflow_project) {
                 modelInfo.textContent = `${data.roboflow_workspace}/${data.roboflow_project}`;
             } else {
