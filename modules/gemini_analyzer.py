@@ -100,8 +100,8 @@ class GeminiFireAlarmAnalyzer:
             logger.info("Identifying fire alarm pages...")
             fa_pages = self._identify_fire_alarm_pages(pages_text)
             
-            # Step 3: Extract code requirements
-            logger.info("Extracting code requirements...")
+            # Step 3: Extract fire-alarm-specific code requirements
+            logger.info("Extracting fire alarm codes...")
             codes = self._extract_code_requirements(pages_text)
             
             # Step 4: Extract fire alarm notes from electrical pages
@@ -193,32 +193,34 @@ If information is not found, use null.
         return sorted(list(set(fa_pages))) # Return unique, sorted list
     
     def _extract_code_requirements(self, pages_text: List[Dict]) -> Dict[str, List[str]]:
-        """Extract applicable codes and standards"""
-        
-        code_pages = "\n\n".join([p['text'] for p in pages_text[:10]]) # Look in first 10 pages
-        
-        prompt = f"""Analyze this construction document and identify all applicable codes and standards.
+        """Extract fire-alarm-specific codes and standards"""
+
+        code_pages = "\n\n".join([p['text'] for p in pages_text[:10]])  # Focus on front matter
+
+        prompt = f"""Identify only the fire alarm and life-safety codes cited in this project.
 
 DOCUMENT TEXT:
 {code_pages[:10000]}
 
-Extract:
-1. BUILDING CODES: (e.g., IBC 2021, CBC, etc.)
-2. FIRE CODES: (e.g., IFC, NFPA codes specific to fire alarm)
-3. ELECTRICAL CODES: (e.g., NEC 2020)
-4. FIRE ALARM STANDARDS: (e.g., NFPA 72, NFPA 101)
-5. LOCAL CODES: Any jurisdiction-specific requirements
+Extract a concise list of the exact editions referenced for:
+• FIRE ALARM CODES AND STANDARDS (e.g., NFPA 72-2019, NFPA 101-2018, UL 864).
 
-Format response as JSON with keys: building_codes, fire_codes, electrical_codes, fire_alarm_standards, local_codes.
-Each should be a list of strings. If none found, use empty list.
+Do NOT list general building, electrical, mechanical, or plumbing codes unless they directly govern the fire alarm scope.
+
+Return JSON with a single key fire_alarm_codes which is an array of strings. Use an empty array if nothing is found.
 """
-        
+
         try:
             response = self.model.generate_content(prompt)
-            return self._parse_json(getattr(response, "text", ""), {})
+            data = self._parse_json(getattr(response, "text", ""), {})
+            if isinstance(data, dict) and 'fire_alarm_codes' not in data:
+                # Backwards compatibility with older schema
+                fire_alarm_codes = data.get('fire_alarm_standards') or []
+                return {'fire_alarm_codes': fire_alarm_codes}
+            return data
         except Exception as e:
             logger.error(f"Error extracting codes: {str(e)}")
-            return {'error': str(e)}
+            return {'fire_alarm_codes': [], 'error': str(e)}
     
     def _extract_fire_alarm_notes(self, pages_text: List[Dict], fa_pages: List[int]) -> List[Dict[str, str]]:
         """Extract fire alarm general notes from electrical pages"""
@@ -250,6 +252,7 @@ DO NOT extract:
 ✗ Standard distance from walls/ceilings
 ✗ Boilerplate code compliance text
 ✗ General electrical notes not related to fire alarm
+✗ Any mention of fire stopping, fire sealing, or other references to construction trades outside of the fire alarm scope
 
 Format as JSON array with objects containing:
 - page: page number
@@ -342,9 +345,12 @@ Extract:
 6. POWER REQUIREMENTS: Backup battery, UPS requirements
 7. MONITORING: Central station monitoring requirements
 8. INTEGRATION: Integration with other systems (access control, BMS, etc.)
+9. SPRINKLER SYSTEM: State whether the building has a sprinkler system and how the fire alarm must monitor it.
+10. APPROVED MANUFACTURERS: List any specific fire alarm manufacturers/brands the specifications call out (return an array).
+11. AUDIO / VOICE SYSTEM: Specify if a voice evacuation or audio system is required, optional, or explicitly not required.
 
-Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION.
-Use null if not found.
+Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM.
+Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
 """
         
         try:

@@ -101,7 +101,7 @@ MAX_WORKERS = 4                # Parallel processing workers
 MAX_CACHE_SIZE = 1000          # Tile cache size
 
 # Flask Settings
-MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max upload
+MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max upload
 PORT = 5000
 ```
 

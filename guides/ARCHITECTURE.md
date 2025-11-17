@@ -400,7 +400,7 @@ export GEMINI_API_KEY=...
 ## Security Considerations
 
 1. **API Keys**: Never commit to version control
-2. **File Upload**: Size limits enforced (50MB)
+2. **File Upload**: Size limits enforced (500MB)
 3. **Input Validation**: Check file types, page numbers
 4. **Temp Files**: Cleanup after processing
 5. **Error Messages**: Don't expose internal paths

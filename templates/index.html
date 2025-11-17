@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <h1>🚨 Fire Alarm PDF Analyzer</h1>
-        <p class="subtitle">Version 6 - Optimized Detection &amp; Gemini AI Analysis</p>
+        <p class="subtitle">Version 6 - Unified Detection &amp; Gemini AI Review</p>
 
         <div class="status-bar" role="status">
             <div class="status-item">
@@ -26,16 +26,7 @@
             </div>
         </div>
 
-        <div class="tab-container" role="tablist">
-            <button class="tab-button active" id="tabButtonUpload" data-tab="upload" role="tab" aria-selected="true" aria-controls="tab-upload">
-                📁 Project Upload
-            </button>
-            <button class="tab-button" id="tabButtonGemini" data-tab="gemini" role="tab" aria-selected="false" aria-controls="tab-gemini" disabled title="Upload a PDF to enable Gemini">
-                🤖 Gemini Analyzer
-            </button>
-        </div>
-
-        <section id="tab-upload" class="tab-panel active" role="tabpanel" aria-labelledby="tabButtonUpload">
+        <section class="analysis-panel" id="analysisPanel">
             <div class="info-banner">
                 <h3>⚡ Performance Optimizations Enabled:</h3>
                 <ul>
@@ -52,7 +43,7 @@
                     <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Click to select or drop PDF file">
                         <div class="drop-zone-icon">📄</div>
                         <h2>Drop PDF here or click to browse</h2>
-                        <p class="upload-help">Maximum file size: 50MB</p>
+                        <p class="upload-help">Maximum file size: 500MB</p>
                         <input type="file" id="fileInput" accept=".pdf,.PDF" style="display: none;">
                     </div>
                     <div id="fileName" class="file-name"></div>
@@ -99,8 +90,10 @@
                 </div>
 
                 <div class="action-row">
-                    <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Local Model)</button>
+                    <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Selected Pages)</button>
+                    <button class="btn btn-gemini" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All Pages)</button>
                 </div>
+                <p class="analysis-helper">Upload once, choose pages for YOLO detection, and trigger Gemini anytime to summarize the entire PDF.</p>
 
                 <div class="progress-section" id="progressSection">
                     <div class="progress-bar">
@@ -126,7 +119,7 @@
             </div>
         </section>
 
-        <section id="tab-gemini" class="tab-panel" role="tabpanel" aria-labelledby="tabButtonGemini">
+        <section class="gemini-panel" id="geminiPanel">
             <div class="gemini-header">
                 <h2>🤖 Gemini Fire Alarm Analyzer</h2>
                 <p>
@@ -136,11 +129,7 @@
                     duct detectors and fire/smoke dampers tied to the fire alarm system, while boilerplate and unrelated trade
                     information is ignored.
                 </p>
-            </div>
-
-            <div class="gemini-actions">
-                <button class="btn btn-gemini" id="startGeminiBtn" disabled>Start Gemini Analysis</button>
-                <p class="gemini-helper">Gemini only runs when you click start so you can control API usage.</p>
+                <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above whenever you need a fresh summary.</p>
             </div>
 
             <div class="gemini-progress hidden" id="geminiProgress" role="status" aria-live="polite">

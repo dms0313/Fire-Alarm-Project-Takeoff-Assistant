@@ -34,7 +34,7 @@ Open browser to: **http://localhost:5000**
 
 ### Step 1: Upload PDF
 - Click or drag-and-drop your construction bid set PDF
-- Maximum file size: 50MB
+- Maximum file size: 500MB
 
 ### Step 2: Select Pages
 - Thumbnails will appear for all pages
@@ -88,7 +88,7 @@ The **[Download]** button downloads that specific page as an annotated PDF.
 
 ### No thumbnails appearing
 - Check PDF file is valid
-- Check file size < 50MB
+- Check file size < 500MB
 - Check browser console for errors
 
 ### "Roboflow not configured" error

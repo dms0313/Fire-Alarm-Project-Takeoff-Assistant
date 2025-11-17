@@ -32,7 +32,7 @@ def register_analysis_routes(app, analyzer):
         """Serve the main HTML interface"""
         # Read HTML from template file
         template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'index.html')
-        with open(template_path, 'r') as f:
+        with open(template_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
         return render_template_string(html_content)
     
