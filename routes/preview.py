@@ -173,7 +173,7 @@ def register_preview_routes(app, analyzer):
                 x2 = x_center_180 + (w_180 / 2)
                 y2 = y_center_180 + (h_180 / 2)
 
-                draw.rectangle([x1, y1, x2, y2], outline="red", width=2)
+                draw.rectangle([x1, y1, x2, y2], outline="red", width=4)
                 label = f"{d_type} ({conf*100:.1f}%)"
                 draw.text((x1, y1 - 10), label, fill="red", font=font)
 

@@ -18,9 +18,6 @@ const devicesGrid = document.getElementById('devicesGrid');
 const previewSection = document.getElementById('previewSection');
 const previewGrid = document.getElementById('previewGrid');
 const exportBtn = document.getElementById('exportBtn');
-const tabButtons = document.querySelectorAll('.tab-button');
-const tabPanels = document.querySelectorAll('.tab-panel');
-const geminiTabBtn = document.getElementById('tabButtonGemini');
 const startGeminiBtn = document.getElementById('startGeminiBtn');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
@@ -32,7 +29,6 @@ let geminiConfigured = false;
 
 // Initialisation
 DocumentReady(() => {
-    setupTabs();
     setupUploadInteractions();
     setupControls();
     resetGeminiUI();
@@ -46,29 +42,6 @@ function DocumentReady(callback) {
     } else {
         callback();
     }
-}
-
-// Tab handling
-function setupTabs() {
-    tabButtons.forEach((button) => {
-        button.addEventListener('click', () => {
-            if (button.disabled) return;
-            switchTab(button.dataset.tab);
-        });
-    });
-}
-
-function switchTab(tabName) {
-    tabButtons.forEach((button) => {
-        const isActive = button.dataset.tab === tabName;
-        button.classList.toggle('active', isActive);
-        button.setAttribute('aria-selected', isActive);
-    });
-
-    tabPanels.forEach((panel) => {
-        const isActive = panel.id === `tab-${tabName}`;
-        panel.classList.toggle('active', isActive);
-    });
 }
 
 // Upload + controls
@@ -137,8 +110,8 @@ function handleFiles(files) {
         return;
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-        showError('File size must be less than 50MB');
+    if (file.size > 500 * 1024 * 1024) {
+        showError('File size must be less than 500MB');
         return;
     }
 
@@ -166,10 +139,6 @@ function handleFiles(files) {
     if (analyzeBtn) {
         analyzeBtn.disabled = false;
     }
-    if (geminiTabBtn) {
-        geminiTabBtn.disabled = false;
-        geminiTabBtn.removeAttribute('title');
-    }
     updateGeminiButtonAvailability();
 
     resetGeminiUI();
@@ -193,10 +162,6 @@ function showError(message) {
     }
     if (analyzeBtn) {
         analyzeBtn.disabled = true;
-    }
-    if (geminiTabBtn) {
-        geminiTabBtn.disabled = true;
-        geminiTabBtn.title = 'Upload a PDF to enable Gemini';
     }
     updateGeminiButtonAvailability();
     resetGeminiUI();
@@ -767,6 +732,12 @@ function displayGeminiResults(data) {
     } = data;
 
     geminiResultsSection.appendChild(buildProjectInfoCard(projectInfo));
+
+    const highLevelCard = buildHighLevelDetailsCard(specifications);
+    if (highLevelCard) {
+        geminiResultsSection.appendChild(highLevelCard);
+    }
+
     geminiResultsSection.appendChild(buildCodeCard(codeRequirements));
     geminiResultsSection.appendChild(buildFireAlarmPagesCard(fireAlarmPages));
     geminiResultsSection.appendChild(buildFireAlarmNotesCard(fireAlarmNotes));
@@ -784,22 +755,17 @@ function displayGeminiError(message) {
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
 
-    const card = document.createElement('div');
-    card.className = 'gemini-card full-width';
-
-    const heading = document.createElement('h3');
-    heading.textContent = 'Gemini Analysis Error';
-    card.appendChild(heading);
+    const { card, content } = createGeminiCard('Gemini Analysis Error', 'full-width');
 
     const paragraph = document.createElement('p');
     paragraph.textContent = message || 'An unexpected error occurred while running Gemini analysis.';
-    card.appendChild(paragraph);
+    content.appendChild(paragraph);
 
     geminiResultsSection.appendChild(card);
 }
 
 function buildProjectInfoCard(projectInfo) {
-    const card = createGeminiCard('Project Overview', 'full-width');
+    const { card, content } = createGeminiCard('Project Overview', 'full-width');
     const details = [
         ['Project Name', projectInfo.project_name],
         ['Location', projectInfo.location],
@@ -810,56 +776,91 @@ function buildProjectInfoCard(projectInfo) {
         ['Project Number', projectInfo.project_number],
     ];
 
-    details.forEach(([label, value]) => card.appendChild(createInfoRow(label, value)));
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'copy-btn';
+    copyButton.textContent = 'Copy Overview';
+    copyButton.dataset.defaultText = 'Copy Overview';
+    copyButton.setAttribute('aria-label', 'Copy Project Overview');
+    copyButton.addEventListener('click', () => {
+        const rows = [];
+        details.forEach(([label, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                rows.push(`${label}: ${formatValue(value)}`);
+            }
+        });
+        if (projectInfo.scope_summary) {
+            rows.push(`Scope Summary: ${projectInfo.scope_summary}`);
+        }
+        const textToCopy = rows.join('\n');
+        copyTextToClipboard(copyButton, textToCopy);
+    });
+    actions.appendChild(copyButton);
+    content.appendChild(actions);
+
+    details.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
 
     if (projectInfo.scope_summary) {
         const scopeHeading = document.createElement('h4');
         scopeHeading.textContent = 'Scope Summary';
-        card.appendChild(scopeHeading);
+        content.appendChild(scopeHeading);
 
         const scopeParagraph = document.createElement('p');
         scopeParagraph.textContent = projectInfo.scope_summary;
-        card.appendChild(scopeParagraph);
+        content.appendChild(scopeParagraph);
     }
 
     return card;
 }
 
-function buildCodeCard(codeRequirements) {
-    const card = createGeminiCard('Applicable Codes & Standards', 'full-width');
-    const categories = {
-        'Building Codes': codeRequirements.building_codes,
-        'Fire Codes': codeRequirements.fire_codes,
-        'Electrical Codes': codeRequirements.electrical_codes,
-        'Fire Alarm Standards': codeRequirements.fire_alarm_standards,
-        'Local Codes': codeRequirements.local_codes,
-    };
+function buildCodeCard(codeRequirements = {}) {
+    const { card, content } = createGeminiCard('Fire Alarm Codes & Standards', 'full-width');
+    const codes = codeRequirements.fire_alarm_codes || codeRequirements.fire_alarm_standards || [];
 
-    Object.entries(categories).forEach(([title, values]) => {
-        const sectionTitle = document.createElement('h4');
-        sectionTitle.textContent = title;
-        card.appendChild(sectionTitle);
-
-        const list = document.createElement('ul');
-        if (Array.isArray(values) && values.length > 0) {
-            values.forEach((item) => {
-                const li = document.createElement('li');
-                li.textContent = item;
-                list.appendChild(li);
-            });
-        } else {
+    const list = document.createElement('ul');
+    if (Array.isArray(codes) && codes.length > 0) {
+        codes.forEach((code) => {
             const li = document.createElement('li');
-            li.textContent = 'Not specified in the provided pages.';
+            li.textContent = code;
             list.appendChild(li);
-        }
-        card.appendChild(list);
-    });
+        });
+    } else {
+        const li = document.createElement('li');
+        li.textContent = 'No fire alarm-specific codes were identified in the provided text.';
+        list.appendChild(li);
+    }
+
+    content.appendChild(list);
+    return card;
+}
+
+function buildHighLevelDetailsCard(specifications = {}) {
+    const sprinklerSystem = getSpecValue(specifications, 'SPRINKLER_SYSTEM');
+    const approvedManufacturers = getSpecValue(specifications, 'APPROVED_MANUFACTURERS');
+    const audioSystem = getSpecValue(specifications, 'AUDIO_SYSTEM');
+
+    const { card, content } = createGeminiCard('High-Level Fire Alarm Details', 'full-width');
+
+    const rows = [
+        ['Sprinkler System Monitoring', sprinklerSystem],
+        ['Approved Manufacturers', approvedManufacturers],
+        ['Audio / Voice Requirement', audioSystem],
+    ];
+
+    rows.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Summarizes sprinkler tie-ins, approved vendors, and audio requirements pulled from the fire alarm specs.';
+    content.appendChild(helper);
 
     return card;
 }
 
 function buildFireAlarmPagesCard(fireAlarmPages) {
-    const card = createGeminiCard('Fire Alarm Focus Pages');
+    const { card, content } = createGeminiCard('Fire Alarm Focus Pages');
 
     if (Array.isArray(fireAlarmPages) && fireAlarmPages.length > 0) {
         const chipContainer = document.createElement('div');
@@ -869,20 +870,20 @@ function buildFireAlarmPagesCard(fireAlarmPages) {
             chip.textContent = `Page ${page}`;
             chipContainer.appendChild(chip);
         });
-        card.appendChild(chipContainer);
+        content.appendChild(chipContainer);
     } else {
-        card.appendChild(createInfoRow('Pages', null));
+        content.appendChild(createInfoRow('Pages', null));
     }
 
     const helper = document.createElement('p');
     helper.textContent = 'These sheets typically include electrical power/special systems plans and general notes containing fire alarm symbols and requirements.';
-    card.appendChild(helper);
+    content.appendChild(helper);
 
     return card;
 }
 
 function buildFireAlarmNotesCard(fireAlarmNotes) {
-    const card = createGeminiCard('Fire Alarm System Notes', 'full-width');
+    const { card, content } = createGeminiCard('Fire Alarm System Notes', 'full-width');
 
     if (Array.isArray(fireAlarmNotes) && fireAlarmNotes.length > 0) {
         const list = document.createElement('ul');
@@ -905,24 +906,24 @@ function buildFireAlarmNotesCard(fireAlarmNotes) {
             item.appendChild(noteContent);
             list.appendChild(item);
         });
-        card.appendChild(list);
+        content.appendChild(list);
     } else {
         const paragraph = document.createElement('p');
         paragraph.textContent = 'No project-specific fire alarm notes were identified.';
-        card.appendChild(paragraph);
+        content.appendChild(paragraph);
     }
 
     return card;
 }
 
 function buildMechanicalCard(mechanicalDevices = {}) {
-    const card = createGeminiCard('Mechanical Coordination', 'full-width');
+    const { card, content } = createGeminiCard('Mechanical Coordination', 'full-width');
     const { duct_detectors: ductDetectors = [], dampers = [] } = mechanicalDevices;
 
     const createDeviceList = (title, devices) => {
         const sectionTitle = document.createElement('h4');
         sectionTitle.textContent = title;
-        card.appendChild(sectionTitle);
+        content.appendChild(sectionTitle);
 
         const list = document.createElement('ul');
         if (Array.isArray(devices) && devices.length > 0) {
@@ -954,7 +955,7 @@ function buildMechanicalCard(mechanicalDevices = {}) {
             li.textContent = 'No devices noted.';
             list.appendChild(li);
         }
-        card.appendChild(list);
+        content.appendChild(list);
     };
 
     createDeviceList('Duct Detectors', ductDetectors);
@@ -964,24 +965,38 @@ function buildMechanicalCard(mechanicalDevices = {}) {
 }
 
 function buildSpecificationsCard(specifications = {}) {
-    const card = createGeminiCard('Fire Alarm System Specifications', 'full-width');
+    const { card, content } = createGeminiCard('Fire Alarm System Specifications', 'full-width');
 
     if (specifications && Object.keys(specifications).length > 0) {
-        Object.entries(specifications).forEach(([key, value]) => {
-            card.appendChild(createInfoRow(formatSpecLabel(key), value));
+        const reservedKeys = ['SPRINKLER_SYSTEM', 'APPROVED_MANUFACTURERS', 'AUDIO_SYSTEM'];
+        const entries = Object.entries(specifications).filter(([key]) => {
+            if (!key) return false;
+            if (key === 'error') return false;
+            const normalized = key.toString().toUpperCase();
+            return !reservedKeys.includes(normalized);
         });
+
+        if (entries.length === 0) {
+            const paragraph = document.createElement('p');
+            paragraph.textContent = 'No additional system specifications were captured.';
+            content.appendChild(paragraph);
+        } else {
+            entries.forEach(([key, value]) => {
+                content.appendChild(createInfoRow(formatSpecLabel(key), value));
+            });
+        }
     } else {
         const paragraph = document.createElement('p');
         paragraph.textContent = 'No additional system specifications were captured.';
-        card.appendChild(paragraph);
+        content.appendChild(paragraph);
     }
 
     return card;
 }
 
 function buildSummaryCard(totalPages, analysisTimestamp) {
-    const card = createGeminiCard('Analysis Summary');
-    card.appendChild(createInfoRow('Total Pages Reviewed', totalPages));
+    const { card, content } = createGeminiCard('Analysis Summary');
+    content.appendChild(createInfoRow('Total Pages Reviewed', totalPages));
 
     if (analysisTimestamp) {
         const summaryDate = new Date(analysisTimestamp);
@@ -989,26 +1004,66 @@ function buildSummaryCard(totalPages, analysisTimestamp) {
             dateStyle: 'medium',
             timeStyle: 'short',
         });
-        card.appendChild(createInfoRow('Generated', formatted));
+        content.appendChild(createInfoRow('Generated', formatted));
     }
 
     const helper = document.createElement('p');
     helper.textContent = 'Only cover pages, fire alarm-related electrical sheets, and mechanical notes impacting the fire alarm system were considered. Plumbing and unrelated trades were ignored.';
-    card.appendChild(helper);
+    content.appendChild(helper);
 
     return card;
 }
 
+function getSpecValue(specifications, key) {
+    if (!specifications || !key) {
+        return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(specifications, key)) {
+        return specifications[key];
+    }
+
+    const lower = key.toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(specifications, lower)) {
+        return specifications[lower];
+    }
+
+    const upper = key.toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(specifications, upper)) {
+        return specifications[upper];
+    }
+
+    return undefined;
+}
+
 function createGeminiCard(title, extraClass) {
-    const card = document.createElement('div');
+    const card = document.createElement('details');
     card.className = 'gemini-card';
+    card.open = true;
     if (extraClass) {
         card.classList.add(extraClass);
     }
-    const heading = document.createElement('h3');
-    heading.textContent = title;
-    card.appendChild(heading);
-    return card;
+
+    const summary = document.createElement('summary');
+    summary.className = 'card-summary';
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = title;
+    const icon = document.createElement('span');
+    icon.className = 'toggle-icon';
+    icon.textContent = '−';
+    summary.appendChild(titleSpan);
+    summary.appendChild(icon);
+    card.appendChild(summary);
+
+    const content = document.createElement('div');
+    content.className = 'card-content';
+    card.appendChild(content);
+
+    card.addEventListener('toggle', () => {
+        icon.textContent = card.open ? '−' : '+';
+    });
+
+    return { card, content };
 }
 
 function createInfoRow(label, value) {
@@ -1047,6 +1102,39 @@ function formatValue(value) {
             .join('; ');
     }
     return typeof value === 'string' ? value.trim() : value;
+}
+
+async function copyTextToClipboard(button, text) {
+    if (!text) {
+        return;
+    }
+
+    const original = button.dataset.defaultText || button.textContent;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+        }
+        button.textContent = 'Copied!';
+        setTimeout(() => {
+            button.textContent = original;
+        }, 2000);
+    } catch (err) {
+        console.error('Failed to copy overview', err);
+        button.textContent = 'Copy failed';
+        setTimeout(() => {
+            button.textContent = original;
+        }, 2000);
+    }
 }
 
 // Preview modal helpers
