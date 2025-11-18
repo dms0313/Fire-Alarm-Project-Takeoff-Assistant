@@ -16,6 +16,7 @@ from flask import request, jsonify, send_file, render_template_string
 
 import config
 from models import FireAlarmDevice, PageAnalysis
+from modules.gemini_report_builder import build_gemini_report
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,7 @@ def register_analysis_routes(app, analyzer):
             # UPDATED CALL: Pass the pdf_path directly to the new analyzer
             # The new analyzer handles its own text extraction.
             results = analyzer.gemini_analyzer.analyze_pdf(pdf_path)
+            results['job_id'] = job_id
             # =================================================================
             
             # Store results
@@ -268,6 +270,36 @@ def register_analysis_routes(app, analyzer):
             mimetype='application/json',
             as_attachment=True,
             download_name=f'fire_alarm_analysis_{job_id}.json'
+        )
+
+    @app.route("/api/gemini_report/<job_id>", methods=["GET"])
+    def download_gemini_report(job_id):
+        """Generate a DOCX report for Gemini analysis output."""
+        with analysis_lock:
+            job = analysis_jobs.get(job_id)
+
+        if not job:
+            return jsonify({'success': False, 'error': 'Job not found'}), 404
+
+        if job.get('analysis_type') != 'gemini':
+            return jsonify({'success': False, 'error': 'Gemini report unavailable for this job'}), 400
+
+        results = job.get('results')
+        if not results:
+            return jsonify({'success': False, 'error': 'Analysis results missing'}), 404
+
+        try:
+            report_io = build_gemini_report(results)
+        except Exception as exc:  # pragma: no cover - report generation is best-effort
+            logger.error("Failed to build Gemini report: %s", exc, exc_info=True)
+            return jsonify({'success': False, 'error': 'Failed to build Gemini report'}), 500
+
+        filename = f'gemini_fire_alarm_report_{job_id}.docx'
+        return send_file(
+            report_io,
+            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            as_attachment=True,
+            download_name=filename
         )
 
 

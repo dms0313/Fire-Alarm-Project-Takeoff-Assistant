@@ -19,6 +19,7 @@ const previewSection = document.getElementById('previewSection');
 const previewGrid = document.getElementById('previewGrid');
 const exportBtn = document.getElementById('exportBtn');
 const startGeminiBtn = document.getElementById('startGeminiBtn');
+const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
@@ -26,6 +27,7 @@ const geminiResultsSection = document.getElementById('geminiResultsSection');
 let selectedFile = null;
 let currentJobId = null;
 let geminiConfigured = false;
+let currentGeminiJobId = null;
 
 // Initialisation
 DocumentReady(() => {
@@ -78,6 +80,15 @@ function setupUploadInteractions() {
 
     if (startGeminiBtn) {
         startGeminiBtn.addEventListener('click', () => startAnalysis('gemini'));
+    }
+
+    if (downloadGeminiReportBtn) {
+        downloadGeminiReportBtn.addEventListener('click', () => {
+            if (!currentGeminiJobId) {
+                return;
+            }
+            window.location.href = `/api/gemini_report/${currentGeminiJobId}`;
+        });
     }
 
     if (selectAllBtn) {
@@ -180,6 +191,8 @@ function resetGeminiUI() {
         geminiResultsSection.classList.add('hidden');
         geminiResultsSection.innerHTML = '';
     }
+    currentGeminiJobId = null;
+    updateGeminiReportButtonState();
 }
 
 function updateGeminiButtonAvailability() {
@@ -201,6 +214,20 @@ function updateGeminiButtonAvailability() {
         }
     } else {
         startGeminiBtn.removeAttribute('title');
+    }
+}
+
+function updateGeminiReportButtonState() {
+    if (!downloadGeminiReportBtn) {
+        return;
+    }
+
+    if (currentGeminiJobId) {
+        downloadGeminiReportBtn.disabled = false;
+        downloadGeminiReportBtn.removeAttribute('title');
+    } else {
+        downloadGeminiReportBtn.disabled = true;
+        downloadGeminiReportBtn.title = 'Run Gemini analysis to generate the detailed report';
     }
 }
 
@@ -404,6 +431,8 @@ function startAnalysis(type) {
             geminiResultsSection.classList.add('hidden');
             geminiResultsSection.innerHTML = '';
         }
+        currentGeminiJobId = null;
+        updateGeminiReportButtonState();
         endpoint = '/api/analyze_gemini';
     }
 
@@ -720,6 +749,9 @@ function displayGeminiResults(data) {
         return;
     }
 
+    currentGeminiJobId = data.job_id || null;
+    updateGeminiReportButtonState();
+
     const {
         project_info: projectInfo = {},
         code_requirements: codeRequirements = {},
@@ -754,6 +786,9 @@ function displayGeminiError(message) {
     }
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
+
+    currentGeminiJobId = null;
+    updateGeminiReportButtonState();
 
     const { card, content } = createGeminiCard('Gemini Analysis Error', 'full-width');
 
