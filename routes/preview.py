@@ -49,6 +49,13 @@ DEVICE_NAME_MAP = {
     "wf": "Waterflow Switch",
 }
 
+
+def get_device_display_name(device_code: str) -> str:
+    """Return the human-readable device name for a symbol code."""
+    if not device_code:
+        return "Unknown Device"
+    return DEVICE_NAME_MAP.get(device_code.lower(), device_code)
+
 COLOR_PALETTE = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
     "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#fb8072", "#80b1d3",
@@ -195,10 +202,15 @@ def register_preview_routes(app, analyzer):
             class_colors = {}
             color_idx = 0
 
+            device_counts = {}
+
             for device in devices:
                 # Class/type and confidence
                 d_type_raw = device.get('device_type') or device.get('class', 'unknown')
                 d_type = str(d_type_raw).lower()
+
+                # Track counts per device type
+                device_counts[d_type] = device_counts.get(d_type, 0) + 1
 
                 # Assign color for this device type
                 if d_type not in class_colors:
@@ -233,8 +245,10 @@ def register_preview_routes(app, analyzer):
             # Build legend with full device names
             legend_entries = []
             for dtype, color in class_colors.items():
-                full_name = DEVICE_NAME_MAP.get(dtype.lower(), dtype)
-                legend_entries.append((color, full_name))
+                full_name = get_device_display_name(dtype)
+                count = device_counts.get(dtype, 0)
+                label = f"{full_name}: {count}"
+                legend_entries.append((color, label))
 
             if legend_entries:
                 swatch_size = 16
