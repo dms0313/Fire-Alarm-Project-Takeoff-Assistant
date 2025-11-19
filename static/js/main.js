@@ -23,11 +23,13 @@ const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
+const geminiStatusMessage = document.getElementById('gemini-status-message');
 
 let selectedFile = null;
 let currentJobId = null;
 let geminiConfigured = false;
 let currentGeminiJobId = null;
+let geminiStatusError = '';
 
 // Initialisation
 DocumentReady(() => {
@@ -204,7 +206,7 @@ function updateGeminiButtonAvailability() {
     if (!shouldEnable) {
         const reasons = [];
         if (!geminiConfigured) {
-            reasons.push('Gemini API is not configured');
+            reasons.push(geminiStatusError ? `Gemini unavailable: ${geminiStatusError}` : 'Gemini API is not configured');
         }
         if (!selectedFile) {
             reasons.push('Upload a PDF to enable Gemini');
@@ -272,12 +274,23 @@ function checkStatus() {
             const geminiDot = document.getElementById('gemini-status');
             const geminiText = document.getElementById('gemini-text');
             geminiConfigured = !!data.gemini_configured;
+            geminiStatusError = data.gemini_error || '';
             if (geminiConfigured) {
                 geminiDot.className = 'status-dot online';
                 geminiText.textContent = 'Connected';
             } else {
                 geminiDot.className = 'status-dot offline';
                 geminiText.textContent = 'Not Configured';
+            }
+
+            if (geminiStatusMessage) {
+                if (!geminiConfigured && geminiStatusError) {
+                    geminiStatusMessage.textContent = `Gemini unavailable: ${geminiStatusError}`;
+                    geminiStatusMessage.classList.remove('hidden');
+                } else {
+                    geminiStatusMessage.textContent = '';
+                    geminiStatusMessage.classList.add('hidden');
+                }
             }
 
             updateGeminiButtonAvailability();

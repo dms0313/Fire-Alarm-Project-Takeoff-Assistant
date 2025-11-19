@@ -40,7 +40,8 @@ class GeminiFireAlarmAnalyzer:
         self.api_key = api_key or GEMINI_API_KEY
         self.model = None
         self.pdf_processor = PDFProcessor()
-        
+        self.initialization_error: Optional[str] = None
+
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
@@ -50,10 +51,13 @@ class GeminiFireAlarmAnalyzer:
                     system_instruction=SYSTEM_INSTRUCTIONS,
                 )
                 logger.info(f"✅ Gemini AI initialized successfully with {GEMINI_MODEL}")
+                self.initialization_error = None
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini: {str(e)}")
+                self.initialization_error = str(e)
+                logger.error(f"Failed to initialize Gemini: {self.initialization_error}")
         else:
-            logger.warning("⚠️ GEMINI_API_KEY not found. AI Analysis will be disabled.")
+            self.initialization_error = "GEMINI_API_KEY not found. AI Analysis will be disabled."
+            logger.warning(self.initialization_error)
     
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
