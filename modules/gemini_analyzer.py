@@ -7,6 +7,7 @@ import logging
 import os
 import json
 import re
+import copy
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import google.generativeai as genai
@@ -111,11 +112,15 @@ class GeminiFireAlarmAnalyzer:
             # Step 5: Extract mechanical fire alarm devices
             logger.info("Extracting mechanical FA devices...")
             mechanical_devices = self._extract_mechanical_fa_devices(pages_text)
-            
+
             # Step 6: Extract specifications
             logger.info("Extracting specifications...")
             specifications = self._extract_specifications(pages_text, fa_pages)
-            
+
+            # Step 7: Generate structured takeoff summary
+            logger.info("Generating structured takeoff summary...")
+            structured_summary = self._generate_structured_takeoff(pages_text, fa_pages)
+
             results = {
                 'success': True,
                 'project_info': project_info,
@@ -124,6 +129,7 @@ class GeminiFireAlarmAnalyzer:
                 'fire_alarm_notes': fa_notes,
                 'mechanical_devices': mechanical_devices,
                 'specifications': specifications,
+                'structured_summary': structured_summary,
                 'total_pages': len(pages_text),
                 'analysis_timestamp': datetime.now().isoformat()
             }
@@ -359,3 +365,117 @@ Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
+
+    def _generate_structured_takeoff(self, pages_text: List[Dict], fa_pages: List[int]) -> Dict[str, Any]:
+        """Create a structured takeoff summary modeled after the provided example."""
+
+        default_summary = {
+            'project_details': {},
+            'sections': {
+                'codes': [],
+                'equipment': [],
+                'mechanical': [],
+                'elevator': [],
+                'access_control': [],
+                'estimating_notes': [],
+                'required_modules': []
+            },
+            'possible_pitfalls': []
+        }
+
+        try:
+            cover_text = "\n\n".join([
+                f"PAGE {p['page_number']}:\n{p['text']}"
+                for p in pages_text[:5]
+                if p.get('text')
+            ])
+
+            fa_text = "\n\n".join([
+                f"PAGE {p['page_number']}:\n{p['text']}"
+                for p in pages_text
+                if p['page_number'] in fa_pages and p.get('text')
+            ])
+
+            mechanical_keywords = [
+                'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu'
+            ]
+            mechanical_text = "\n\n".join([
+                f"PAGE {p['page_number']}:\n{p['text']}"
+                for p in pages_text
+                if p.get('text') and any(keyword in p['text'].lower() for keyword in mechanical_keywords)
+            ])
+
+            combined_text = "\n\n".join(filter(None, [
+                "### COVER / PROJECT INFO PAGES", cover_text,
+                "### FIRE ALARM / ELECTRICAL EXCERPTS", fa_text,
+                "### MECHANICAL / HVAC EXCERPTS", mechanical_text
+            ]))[:15000]
+
+            if not combined_text:
+                return default_summary
+
+            layout_example = (
+                "Project: Example Civic Center | Location: Sample City, ST | Bid Date: TBD\n"
+                "1. Codes & Permits\n- NFPA 72-2019 referenced throughout electrical sheets.\n"
+                "2. Equipment Scope\n- Provide addressable FACP with NAC power supplies.\n"
+                "3. Mechanical Integration\n- Monitor all duct detectors tied to AHUs and RTUs.\n"
+                "4. Elevator Coordination\n- Provide shunt-trip monitoring and recall interfaces.\n"
+                "5. Access Control\n- Coordinate card reader contacts with FA for door release.\n"
+                "6. Estimating Notes\n- Allow extra time for phased renovation work.\n"
+                "7. Required System Modules\n- Include voice evacuation and network communicator.\n"
+                "Possible pitfalls/things to consider:\n- Mechanical schedule lists future RTUs not on drawings."
+            )
+
+            prompt = f"""Using the representative PDF text below (cover pages plus fire alarm and mechanical excerpts),
+create a structured fire alarm takeoff summary. Mirror the tone and layout of the provided example summary block.
+
+EXAMPLE LAYOUT TO FOLLOW:
+{layout_example}
+
+REQUIREMENTS:
+• Focus on project-specific content that affects the fire alarm scope.
+• Return STRICT JSON only (no markdown) with this structure:
+  {{
+    "project_details": {{
+        "name": string or null,
+        "location": string or null,
+        "bid_date": string or null,
+        "scope_snapshot": string or null
+    }},
+    "sections": {{
+        "codes": [strings],
+        "equipment": [strings],
+        "mechanical": [strings],
+        "elevator": [strings],
+        "access_control": [strings],
+        "estimating_notes": [strings],
+        "required_modules": [strings]
+    }},
+    "possible_pitfalls": [strings]
+  }}
+• Keep bullet points concise and reference sheet/page callouts when available.
+• Note unknown items as null or empty arrays instead of inventing data.
+
+REPRESENTATIVE PROJECT TEXT:
+{combined_text}
+"""
+
+            response = self.model.generate_content(prompt)
+            parsed = self._parse_json(getattr(response, "text", ""), default_summary)
+
+            if not isinstance(parsed, dict):
+                return default_summary
+
+            summary = copy.deepcopy(default_summary)
+            summary['project_details'] = parsed.get('project_details') or {}
+
+            merged_sections = copy.deepcopy(default_summary['sections'])
+            for key, value in (parsed.get('sections') or {}).items():
+                merged_sections[key] = value
+            summary['sections'] = merged_sections
+
+            summary['possible_pitfalls'] = parsed.get('possible_pitfalls') or []
+            return summary
+        except Exception as exc:
+            logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
+            return default_summary
