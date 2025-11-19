@@ -759,11 +759,22 @@ function displayGeminiResults(data) {
         fire_alarm_notes: fireAlarmNotes = [],
         mechanical_devices: mechanicalDevices = {},
         specifications = {},
+        structured_summary: structuredSummary = {},
         total_pages: totalPages,
         analysis_timestamp: analysisTimestamp,
     } = data;
 
     geminiResultsSection.appendChild(buildProjectInfoCard(projectInfo));
+
+    const structuredSummaryCard = buildStructuredSummaryCard(structuredSummary);
+    if (structuredSummaryCard) {
+        geminiResultsSection.appendChild(structuredSummaryCard);
+    }
+
+    const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
+    if (pitfallsCard) {
+        geminiResultsSection.appendChild(pitfallsCard);
+    }
 
     const highLevelCard = buildHighLevelDetailsCard(specifications);
     if (highLevelCard) {
@@ -848,6 +859,403 @@ function buildProjectInfoCard(projectInfo) {
     }
 
     return card;
+}
+
+function buildStructuredSummaryCard(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return null;
+    }
+
+    const summaryText =
+        structuredSummary.project_summary ||
+        structuredSummary.summary ||
+        structuredSummary.overview ||
+        structuredSummary.scope_summary;
+    const sections = getSectionsArray(structuredSummary);
+
+    if (!summaryText && sections.length === 0) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('AI Structured Summary', 'full-width');
+    card.classList.add('structured-summary-card');
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const copyButton = document.createElement('button');
+    copyButton.type = 'button';
+    copyButton.className = 'copy-btn';
+    copyButton.textContent = 'Copy Structured Summary';
+    copyButton.dataset.defaultText = 'Copy Structured Summary';
+    copyButton.addEventListener('click', () => {
+        const textToCopy = serializeStructuredSummary(structuredSummary);
+        copyTextToClipboard(copyButton, textToCopy || 'Structured summary not available.');
+    });
+    actions.appendChild(copyButton);
+    content.appendChild(actions);
+
+    if (summaryText) {
+        const summaryParagraph = document.createElement('p');
+        summaryParagraph.textContent = summaryText;
+        content.appendChild(summaryParagraph);
+    }
+
+    const sectionList = buildSectionList(sections);
+    if (sectionList) {
+        content.appendChild(sectionList);
+    }
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Structured in the same order as the AI response so estimators can copy/paste directly into bid notes.';
+    content.appendChild(helper);
+
+    return card;
+}
+
+function getSectionsArray(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return [];
+    }
+
+    const candidates = [
+        structuredSummary.sections,
+        structuredSummary.section_list,
+        structuredSummary.numbered_sections,
+        structuredSummary.summary_sections,
+    ];
+
+    for (const candidate of candidates) {
+        if (Array.isArray(candidate) && candidate.length > 0) {
+            return candidate;
+        }
+    }
+
+    return [];
+}
+
+function buildSectionList(sections = [], level = 1, parentNumber = '') {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return null;
+    }
+
+    const list = document.createElement('ol');
+    list.className = 'structured-section-list';
+    if (level > 1) {
+        list.classList.add('nested');
+    }
+
+    sections.forEach((section, index) => {
+        if (!section) {
+            return;
+        }
+
+        const li = document.createElement('li');
+        const sectionNumber =
+            section.number ||
+            section.section_number ||
+            section.index ||
+            (parentNumber ? `${parentNumber}.${index + 1}` : `${index + 1}`);
+        const titleText = section.title || section.heading || section.name || `Section ${sectionNumber}`;
+
+        const header = document.createElement('div');
+        header.className = 'structured-section-header';
+
+        const numberSpan = document.createElement('span');
+        numberSpan.className = 'section-number';
+        numberSpan.textContent = `${sectionNumber}.`;
+        header.appendChild(numberSpan);
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'section-title';
+        titleSpan.textContent = titleText;
+        header.appendChild(titleSpan);
+
+        li.appendChild(header);
+
+        const sectionSummary = section.summary || section.description || section.text || section.detail;
+        if (sectionSummary) {
+            const summaryParagraph = document.createElement('p');
+            summaryParagraph.className = 'section-summary';
+            summaryParagraph.textContent = sectionSummary;
+            li.appendChild(summaryParagraph);
+        }
+
+        const bulletSource = getSectionBulletSource(section);
+        const bulletList = buildBulletListFromItems(bulletSource);
+        if (bulletList) {
+            li.appendChild(bulletList);
+        }
+
+        const subsectionCandidates = section.subsections || section.sections || section.children;
+        const nestedList = buildSectionList(subsectionCandidates, level + 1, sectionNumber);
+        if (nestedList) {
+            li.appendChild(nestedList);
+        }
+
+        list.appendChild(li);
+    });
+
+    if (list.children.length === 0) {
+        return null;
+    }
+
+    return list;
+}
+
+function getSectionBulletSource(section) {
+    if (!section || typeof section !== 'object') {
+        return [];
+    }
+
+    const keys = ['bullets', 'bullet_points', 'items', 'points', 'key_points', 'highlights', 'summary_items'];
+    for (const key of keys) {
+        if (Array.isArray(section[key]) && section[key].length > 0) {
+            return section[key];
+        }
+    }
+    return [];
+}
+
+function buildBulletListFromItems(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return null;
+    }
+
+    const list = document.createElement('ul');
+    list.className = 'structured-bullet-list';
+
+    items.forEach((item) => {
+        if (item === undefined || item === null) {
+            return;
+        }
+
+        const li = document.createElement('li');
+
+        if (typeof item === 'string' || typeof item === 'number') {
+            li.textContent = String(item);
+        } else if (Array.isArray(item)) {
+            const nested = buildBulletListFromItems(item);
+            if (nested) {
+                li.appendChild(nested);
+            }
+        } else if (typeof item === 'object') {
+            const label = item.label || item.title || item.heading;
+            const value = item.value || item.text || item.description || item.detail || item.summary;
+            const primary = label && value && label !== value ? `${label}: ${value}` : label || value;
+            if (primary) {
+                const span = document.createElement('span');
+                span.textContent = primary;
+                li.appendChild(span);
+            }
+
+            if (item.notes || item.action || item.context) {
+                const note = document.createElement('div');
+                note.className = 'bullet-note';
+                note.textContent = item.notes || item.action || item.context;
+                li.appendChild(note);
+            }
+
+            const nested = buildBulletListFromItems(
+                item.items || item.subpoints || item.sub_bullets || item.children || item.bullets || item.details
+            );
+            if (nested) {
+                li.appendChild(nested);
+            }
+        } else {
+            li.textContent = String(item);
+        }
+
+        if (li.textContent.trim() || li.querySelector('ul')) {
+            list.appendChild(li);
+        }
+    });
+
+    if (list.children.length === 0) {
+        return null;
+    }
+
+    return list;
+}
+
+function buildPitfallsCard(structuredSummary = {}, fallbackPitfalls = []) {
+    const pitfalls = extractPitfallItems(structuredSummary, fallbackPitfalls);
+    if (pitfalls.length === 0) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Possible Pitfalls / Things to Consider', 'full-width');
+    card.classList.add('pitfalls-card');
+
+    const list = document.createElement('ul');
+    list.className = 'pitfalls-list';
+    pitfalls.forEach((pitfall) => {
+        const li = document.createElement('li');
+        li.textContent = pitfall;
+        list.appendChild(li);
+    });
+    content.appendChild(list);
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Quick coordination risks pulled from the structured summary so estimators know what to flag.';
+    content.appendChild(helper);
+
+    return card;
+}
+
+function extractPitfallItems(structuredSummary = {}, fallbackPitfalls = []) {
+    const pitfalls = [];
+    const candidates = [];
+
+    if (structuredSummary && typeof structuredSummary === 'object') {
+        candidates.push(
+            structuredSummary.pitfalls,
+            structuredSummary.possible_pitfalls,
+            structuredSummary.things_to_consider,
+            structuredSummary.coordination_risks
+        );
+    }
+
+    candidates.push(fallbackPitfalls);
+
+    candidates.forEach((candidate) => {
+        if (!candidate) {
+            return;
+        }
+        if (Array.isArray(candidate)) {
+            candidate.forEach((item) => {
+                const text = normalizeStructuredText(item);
+                if (text) {
+                    pitfalls.push(text);
+                }
+            });
+        } else {
+            const text = normalizeStructuredText(candidate);
+            if (text) {
+                pitfalls.push(text);
+            }
+        }
+    });
+
+    return pitfalls;
+}
+
+function serializeStructuredSummary(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return '';
+    }
+
+    const lines = [];
+    const summaryText =
+        structuredSummary.project_summary ||
+        structuredSummary.summary ||
+        structuredSummary.overview ||
+        structuredSummary.scope_summary;
+
+    if (summaryText) {
+        lines.push('Project Summary:');
+        lines.push(summaryText);
+        lines.push('');
+    }
+
+    const sections = getSectionsArray(structuredSummary);
+    appendSectionsToLines(sections, lines);
+
+    const pitfalls = extractPitfallItems(structuredSummary);
+    if (pitfalls.length > 0) {
+        lines.push('', 'Possible Pitfalls / Things to Consider:');
+        pitfalls.forEach((pitfall, index) => {
+            lines.push(`${index + 1}. ${pitfall}`);
+        });
+    }
+
+    return lines.filter((line, index, arr) => line !== '' || (index > 0 && arr[index - 1] !== '')).join('\n');
+}
+
+function appendSectionsToLines(sections = [], lines = [], parentNumber = '') {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return;
+    }
+
+    sections.forEach((section, index) => {
+        if (!section) {
+            return;
+        }
+
+        const sectionNumber =
+            section.number ||
+            section.section_number ||
+            section.index ||
+            (parentNumber ? `${parentNumber}.${index + 1}` : `${index + 1}`);
+        const titleText = section.title || section.heading || section.name || `Section ${sectionNumber}`;
+        const sectionSummary = section.summary || section.description || section.text || section.detail || '';
+        const headerLine = sectionSummary
+            ? `${sectionNumber}. ${titleText} - ${sectionSummary}`
+            : `${sectionNumber}. ${titleText}`;
+        lines.push(headerLine.trim());
+
+        const bulletSource = getSectionBulletSource(section);
+        flattenStructuredItems(bulletSource).forEach((item) => {
+            lines.push(`  • ${item}`);
+        });
+
+        const subsectionCandidates = section.subsections || section.sections || section.children;
+        appendSectionsToLines(subsectionCandidates, lines, sectionNumber);
+    });
+}
+
+function flattenStructuredItems(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+        return [];
+    }
+
+    const flattened = [];
+    items.forEach((item) => {
+        if (item === undefined || item === null) {
+            return;
+        }
+        if (Array.isArray(item)) {
+            flattened.push(...flattenStructuredItems(item));
+            return;
+        }
+        const text = normalizeStructuredText(item);
+        if (text) {
+            flattened.push(text);
+        }
+        if (typeof item === 'object') {
+            const nested = item.items || item.subpoints || item.sub_bullets || item.children || item.bullets || item.details;
+            flattened.push(...flattenStructuredItems(nested));
+        }
+    });
+    return flattened;
+}
+
+function normalizeStructuredText(value) {
+    if (value === undefined || value === null) {
+        return '';
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
+        return String(value).trim();
+    }
+    if (typeof value === 'object') {
+        const label = value.label || value.title || value.heading || value.name;
+        const primary = value.value || value.text || value.description || value.detail || value.summary;
+        const supplemental = value.notes || value.action || value.context || value.reason;
+        const parts = [];
+        if (label && primary && label !== primary) {
+            parts.push(`${label}: ${primary}`);
+        } else if (label) {
+            parts.push(label);
+        } else if (primary) {
+            parts.push(primary);
+        }
+        if (supplemental) {
+            parts.push(supplemental);
+        }
+        return parts.join(' — ').trim();
+    }
+    return String(value).trim();
 }
 
 function buildCodeCard(codeRequirements = {}) {
