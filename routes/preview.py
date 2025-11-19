@@ -14,6 +14,51 @@ from flask import request, jsonify, send_file
 logger = logging.getLogger(__name__)
 
 
+DEVICE_NAME_MAP = {
+    "cm": "Control Module",
+    "co": "CO Detector",
+    "dd": "Duct Detector",
+    "dh": "Door Holder",
+    "ecap": "Emergency Communications Access Panel",
+    "ecps": "Emergency Communications Power Supply",
+    "ecs": "Emergency Communication Station",
+    "faap": "Remote Annunciator",
+    "facp": "Fire Alarm Control Panel",
+    "fsd": "Fire/Smoke Damper",
+    "h_w": "Horn, Wall Mounted",
+    "heat": "Heat Detector",
+    "hs_c": "Horn/Strobe, Ceiling Mounted",
+    "hs_w": "Horn/Strobe, Wall Mounted",
+    "hs_w_wp": "Horn/Strobe, Wall Mounted, Weatherproof",
+    "loc": "Local Operating Console",
+    "mm": "Monitor Module",
+    "nac": "NAC Panel",
+    "pull": "Pull Station",
+    "relay": "Relay Module",
+    "rts": "Remote Test Switch",
+    "s_w": "Strobe, Wall Mounted",
+    "s_w_wp": "Strobe, Wall Mounted, Weatherproof",
+    "sc": "Strobe, Ceiling Mounted",
+    "smoke": "Smoke Detector",
+    "smoke-co": "Smoke/CO Combo",
+    "smoke-sb": "Smoke w/ Sounder Base",
+    "sp_c": "Speaker, Ceiling Mounted",
+    "ss_c": "Speaker/Strobe, Ceiling Mounted",
+    "ss_w": "Speaker/Strobe, Wall Mounted",
+    "ts": "Tamper Switch",
+    "wf": "Waterflow Switch",
+}
+
+COLOR_PALETTE = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
+    "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#fb8072", "#80b1d3",
+    "#fdb462", "#b3de69", "#fccde5", "#d9d9d9", "#bc80bd", "#ccebc5",
+    "#ffed6f", "#a6cee3", "#1b9e77", "#d95f02", "#7570b3", "#e7298a",
+    "#66a61e", "#e6ab02", "#a6761d", "#666666", "#8dd3c7", "#bebada",
+    "#ffffb3",
+]
+
+
 def register_preview_routes(app, analyzer):
     """Register preview-related routes"""
 
@@ -131,6 +176,7 @@ def register_preview_routes(app, analyzer):
             # -----------------------------------------------------------------
             from PIL import ImageDraw, ImageFont
             annotated_image = image.copy()
+            annotated_image = annotated_image.convert("RGB")
             draw = ImageDraw.Draw(annotated_image)
             try:
                 # Try to load a slightly larger font if possible
@@ -146,10 +192,19 @@ def register_preview_routes(app, analyzer):
             # rendered preview DPI (180).  See conversion notes here:contentReference[oaicite:0]{index=0}.
             render_scale = render_dpi / training_dpi  # e.g. 180 / 350
 
+            class_colors = {}
+            color_idx = 0
+
             for device in devices:
                 # Class/type and confidence
-                d_type = device.get('device_type') or device.get('class', 'unknown')
-                conf = float(device.get('confidence', 0))
+                d_type_raw = device.get('device_type') or device.get('class', 'unknown')
+                d_type = str(d_type_raw).lower()
+
+                # Assign color for this device type
+                if d_type not in class_colors:
+                    class_colors[d_type] = COLOR_PALETTE[color_idx % len(COLOR_PALETTE)]
+                    color_idx += 1
+                color = class_colors[d_type]
 
                 # Detector outputs are in pixels at training DPI (350)
                 x_center_350 = float(device.get('x', 0))
@@ -173,9 +228,65 @@ def register_preview_routes(app, analyzer):
                 x2 = x_center_180 + (w_180 / 2)
                 y2 = y_center_180 + (h_180 / 2)
 
-                draw.rectangle([x1, y1, x2, y2], outline="red", width=4)
-                label = f"{d_type} ({conf*100:.1f}%)"
-                draw.text((x1, y1 - 10), label, fill="red", font=font)
+                draw.rectangle([x1, y1, x2, y2], outline=color, width=4)
+
+            # Build legend with full device names
+            legend_entries = []
+            for dtype, color in class_colors.items():
+                full_name = DEVICE_NAME_MAP.get(dtype.lower(), dtype)
+                legend_entries.append((color, full_name))
+
+            if legend_entries:
+                swatch_size = 16
+                text_spacing = 8
+                row_spacing = 6
+                padding = 10
+
+                legend_width = 0
+                legend_height = 0
+                text_sizes = {}
+
+                for color, name in legend_entries:
+                    bbox = draw.textbbox((0, 0), name, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    text_sizes[name] = (text_width, text_height)
+                    entry_width = swatch_size + text_spacing + text_width
+                    entry_height = max(swatch_size, text_height)
+                    legend_width = max(legend_width, entry_width)
+                    legend_height += entry_height + row_spacing
+
+                legend_height = legend_height - row_spacing if legend_entries else 0
+
+                legend_x = annotated_image.width - legend_width - (padding * 2) - 20
+                legend_y = 20
+
+                bg_x1 = legend_x - padding
+                bg_y1 = legend_y - padding
+                bg_x2 = legend_x + legend_width + padding
+                bg_y2 = legend_y + legend_height + padding
+                draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill="#FFFFFF", outline="#CCCCCC")
+
+                current_y = legend_y
+                for color, name in sorted(legend_entries, key=lambda item: item[1]):
+                    text_width, text_height = text_sizes[name]
+                    entry_height = max(swatch_size, text_height)
+
+                    draw.rectangle(
+                        [legend_x, current_y, legend_x + swatch_size, current_y + swatch_size],
+                        fill=color,
+                        outline=color,
+                    )
+
+                    text_y = current_y + (entry_height - text_height) / 2
+                    draw.text(
+                        (legend_x + swatch_size + text_spacing, text_y),
+                        name,
+                        fill="black",
+                        font=font,
+                    )
+
+                    current_y += entry_height + row_spacing
 
             # -----------------------------------------------------------------
             # Convert annotated image → single-page PDF
