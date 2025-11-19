@@ -104,7 +104,11 @@ LOCAL_MODEL_PATH, LOCAL_MODEL_FOUND, LOCAL_MODEL_SEARCH_PATHS = _collect_candida
 # =============================================================================
 # OPTIONAL SERVICES
 # =============================================================================
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Support either GEMINI_API_KEY or GOOGLE_API_KEY for Gemini configuration so that
+# deployments that expose the key under Google's default env var are detected.
+_RAW_GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+_RAW_GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
+GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
 GEMINI_MODEL = "gemini-2.5-flash"
 
 # =============================================================================
@@ -148,7 +152,11 @@ def validate_config():
         for candidate in LOCAL_MODEL_SEARCH_PATHS:
             status = "FOUND" if os.path.exists(candidate) else "MISSING"
             logger.info("    - %s (%s)", candidate, status)
-    logger.info(f"  Gemini API Key: {'SET' if GEMINI_API_KEY else 'NOT SET (optional)'}")
+    if GEMINI_API_KEY:
+        source = "GEMINI_API_KEY" if _RAW_GEMINI_KEY else "GOOGLE_API_KEY"
+        logger.info(f"  Gemini API Key: SET (source: {source})")
+    else:
+        logger.info("  Gemini API Key: NOT SET (optional)")
     logger.info("=" * 70)
 
     # Check for local model availability
