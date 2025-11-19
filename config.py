@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # =============================================================================
 # DETECTION MODEL
 # =============================================================================
-_DEFAULT_MODEL_FILENAMES: Tuple[str, ...] = ("best.pt", "model.pt", "weights.pt")
+_DEFAULT_MODEL_FILENAMES: Tuple[str, ...] = ("best.pt", "BESTY.pt", "weights.pt")
 
 
 def _ensure_absolute(path: Path, base: Path) -> Path:

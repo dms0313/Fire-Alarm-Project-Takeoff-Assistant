@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🚨 Fire Alarm PDF Analyzer - v6</title>
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="../static/css/style.css">
     <script defer src="/static/js/main.js"></script>
 </head>
 <body>
@@ -29,13 +29,8 @@
 
         <section class="analysis-panel" id="analysisPanel">
             <div class="info-banner">
-                <h3>⚡ Performance Optimizations Enabled:</h3>
+                <h3></h3>
                 <ul>
-                    <li><strong>Blank Tile Filtering:</strong> Skip empty/white tiles (1.5-3x speedup)</li>
-                    <li><strong>Edge Tile Filtering:</strong> Skip document margins (1.2-1.5x speedup)</li>
-                    <li><strong>Parallel Processing:</strong> Process multiple tiles simultaneously (2-8x speedup)</li>
-                    <li><strong>Result Caching:</strong> Avoid reprocessing identical tiles</li>
-                    <li><strong>Smart Prioritization:</strong> Process content-rich tiles first</li>
                 </ul>
             </div>
 
@@ -94,7 +89,7 @@
                     <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Selected Pages)</button>
                     <button class="btn btn-gemini" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All Pages)</button>
                 </div>
-                <p class="analysis-helper">Upload once, choose pages for YOLO detection, and trigger Gemini anytime to summarize the entire PDF.</p>
+                <p class="analysis-helper">Symbol detection requires one or more pages to be selected. AI Summary scans all pages..</p>
 
                 <div class="progress-section" id="progressSection">
                     <div class="progress-bar">
@@ -122,18 +117,13 @@
 
         <section class="gemini-panel" id="geminiPanel">
             <div class="gemini-header">
-                <h2>🤖 Gemini Fire Alarm Analyzer</h2>
+                <h2>AI Takeoff Assistant for Fire Alarm</h2>
                 <p>
-                    Gemini reviews your full bid set to capture only the fire alarm details you need. It collects
-                    project facts from the cover pages, identifies applicable codes, and pinpoints the electrical and mechanical
-                    pages that contain fire alarm system requirements, notes, and devices. Mechanical sheets are scanned for
-                    duct detectors and fire/smoke dampers tied to the fire alarm system, while boilerplate and unrelated trade
-                    information is ignored.
                 </p>
                 <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above whenever you need a fresh summary.</p>
                 <div class="gemini-actions">
                     <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
-                        📄 Download Detailed DOCX Report
+                        📄 Download Report
                     </button>
                     <p class="gemini-helper">Available after Gemini finishes so you can share a page-referenced report.</p>
                 </div>
