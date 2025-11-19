@@ -17,6 +17,7 @@ from typing import List, Dict, Any
 import google.generativeai as genai
 from modules.pdf_processor import PDFProcessor
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from .gemini_analyzer import SYSTEM_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,10 @@ class GeminiAnalyzer:
         if GEMINI_API_KEY:
             try:
                 genai.configure(api_key=GEMINI_API_KEY)
-                self.model = genai.GenerativeModel(GEMINI_MODEL)
+                self.model = genai.GenerativeModel(
+                    GEMINI_MODEL,
+                    system_instruction=SYSTEM_INSTRUCTIONS,
+                )
                 logger.info(f"✅ Gemini Analyzer initialized with model: {GEMINI_MODEL}")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
