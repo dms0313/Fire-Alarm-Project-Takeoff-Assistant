@@ -16,6 +16,20 @@ import google.generativeai as genai
 from .pdf_processor import PDFProcessor
 from config import GEMINI_API_KEY, GEMINI_MODEL # Assumes GEMINI_MODEL is in config
 
+
+SYSTEM_INSTRUCTIONS = (
+    "You are a fire alarm sales estimator that reviews construction documents and "
+    "extracts all unique fire alarm related details from a complete set of building "
+    "plans, filtering out non-fire alarm related information and only returning "
+    "project related unique details and specifications for commercial fire alarm "
+    "systems. You are well versed in NFPA and IBC codes and you cross check the "
+    "information given in construction documents with applicable code versions to "
+    "determine if any inconsistencies or errors are present. You focus on the fire "
+    "alarm pages, usually shown on \"Special Systems\" pages, \"Power Plan\" pages, or "
+    "dedicated \"Fire Alarm\" pages. You always check mechanical pages for duct "
+    "detectors and fire smoke damper details."
+)
+
 logger = logging.getLogger("fire-alarm-analyzer")
 
 class GeminiFireAlarmAnalyzer:
@@ -30,8 +44,11 @@ class GeminiFireAlarmAnalyzer:
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                # Use GEMINI_MODEL from config
-                self.model = genai.GenerativeModel(GEMINI_MODEL) 
+                # Use GEMINI_MODEL from config with targeted system instructions
+                self.model = genai.GenerativeModel(
+                    GEMINI_MODEL,
+                    system_instruction=SYSTEM_INSTRUCTIONS,
+                )
                 logger.info(f"✅ Gemini AI initialized successfully with {GEMINI_MODEL}")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {str(e)}")
