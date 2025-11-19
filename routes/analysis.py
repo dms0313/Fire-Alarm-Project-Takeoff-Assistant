@@ -53,6 +53,7 @@ def register_analysis_routes(app, analyzer):
             'local_model_filename': model_filename,
             'local_detector_error': analyzer.local_detector_error,
             'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
+            'gemini_model': getattr(config, 'GEMINI_MODEL', None),
         }
 
         if expose_model_path:
