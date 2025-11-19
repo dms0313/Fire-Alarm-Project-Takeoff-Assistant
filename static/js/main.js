@@ -12,6 +12,8 @@ const deselectAllBtn = document.getElementById('deselectAllBtn');
 const progressSection = document.getElementById('progressSection');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
+const progressStatus = document.getElementById('progressStatus');
+const progressEta = document.getElementById('progressEta');
 const resultsSection = document.getElementById('resultsSection');
 const resultsSummary = document.getElementById('resultsSummary');
 const devicesGrid = document.getElementById('devicesGrid');
@@ -22,6 +24,7 @@ const startGeminiBtn = document.getElementById('startGeminiBtn');
 const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
+const geminiEta = document.getElementById('geminiEta');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
 
@@ -30,6 +33,13 @@ let currentJobId = null;
 let geminiConfigured = false;
 let currentGeminiJobId = null;
 let geminiStatusError = '';
+let progressInterval = null;
+let progressStartTime = null;
+let geminiProgressInterval = null;
+let geminiProgressStartTime = null;
+
+const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
+const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
 
 // Initialisation
 DocumentReady(() => {
@@ -185,6 +195,7 @@ function showError(message) {
 }
 
 function resetGeminiUI() {
+    stopGeminiProgress();
     if (geminiProgress) {
         geminiProgress.classList.add('hidden');
         geminiProgressText.textContent = '';
@@ -249,10 +260,157 @@ function hideDetectionResults() {
     if (previewGrid) {
         previewGrid.innerHTML = '';
     }
+    stopProgressAnimation();
     if (progressSection) {
         progressSection.style.display = 'none';
     }
     currentJobId = null;
+}
+
+function stopProgressAnimation() {
+    if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+    }
+    progressStartTime = null;
+}
+
+function startProgressAnimation(initialStatus = 'Working on your PDF...') {
+    if (!progressSection || !progressFill || !progressText) {
+        return;
+    }
+
+    stopProgressAnimation();
+
+    progressSection.style.display = 'block';
+    progressFill.style.width = '5%';
+    progressFill.style.background = 'linear-gradient(90deg, #4ECDC4 0%, #45B7D1 100%)';
+    progressText.textContent = 'Initializing analysis...';
+
+    if (progressStatus) {
+        progressStatus.textContent = initialStatus;
+    }
+    if (progressEta) {
+        progressEta.textContent = 'Estimating time remaining...';
+    }
+
+    progressStartTime = Date.now();
+    updateProgressAnimation();
+    progressInterval = setInterval(() => updateProgressAnimation(), 1000);
+}
+
+function updateProgressAnimation(statusOverride) {
+    if (!progressFill || !progressText || !progressStartTime) {
+        return;
+    }
+
+    const elapsedSeconds = (Date.now() - progressStartTime) / 1000;
+    const estimatedSeconds = ESTIMATED_LOCAL_DURATION_SECONDS || 60;
+    const percent = Math.min(95, Math.max(5, Math.floor((elapsedSeconds / estimatedSeconds) * 95)));
+
+    const statusSteps = [
+        { threshold: 25, message: 'Uploading PDF and preparing page previews...' },
+        { threshold: 55, message: 'Detecting fire alarm symbols on selected pages...' },
+        { threshold: 85, message: 'Building annotated previews and summaries...' },
+        { threshold: 96, message: 'Finalizing results...' },
+    ];
+
+    const autoStatus = statusSteps.find((step) => percent < step.threshold) || statusSteps[statusSteps.length - 1];
+
+    progressFill.style.width = `${percent}%`;
+    progressText.textContent = `Working... ${percent}%`;
+
+    if (progressStatus) {
+        progressStatus.textContent = statusOverride || autoStatus.message;
+    }
+
+    if (progressEta) {
+        const remainingSeconds = Math.max(0, Math.ceil(estimatedSeconds - elapsedSeconds));
+        progressEta.textContent = `${remainingSeconds}s remaining (estimated)`;
+    }
+}
+
+function finishProgressAnimation(message = 'Analysis complete!') {
+    stopProgressAnimation();
+
+    if (progressFill) {
+        progressFill.style.width = '100%';
+    }
+    if (progressText) {
+        progressText.textContent = message;
+    }
+    if (progressStatus) {
+        progressStatus.textContent = 'Detection finished';
+    }
+    if (progressEta) {
+        progressEta.textContent = 'Done';
+    }
+}
+
+function failProgressAnimation(errorMessage) {
+    stopProgressAnimation();
+
+    if (progressFill) {
+        progressFill.style.width = '100%';
+        progressFill.style.background = '#ff6b6b';
+    }
+    if (progressText) {
+        progressText.textContent = `Error: ${errorMessage}`;
+    }
+    if (progressStatus) {
+        progressStatus.textContent = 'Analysis stopped';
+    }
+    if (progressEta) {
+        progressEta.textContent = 'No active process';
+    }
+}
+
+function startGeminiProgress(statusText = 'Analyzing fire alarm scope with Gemini...') {
+    if (!geminiProgress || !geminiProgressText) {
+        return;
+    }
+
+    stopGeminiProgress();
+    geminiProgress.classList.remove('hidden');
+    geminiProgressText.textContent = statusText;
+    if (geminiEta) {
+        geminiEta.textContent = 'Estimating time remaining...';
+    }
+
+    geminiProgressStartTime = Date.now();
+    geminiProgressInterval = setInterval(() => updateGeminiProgress(), 1000);
+}
+
+function updateGeminiProgress(statusText) {
+    if (!geminiProgressText || !geminiProgressStartTime) {
+        return;
+    }
+
+    if (statusText) {
+        geminiProgressText.textContent = statusText;
+    }
+
+    if (geminiEta) {
+        const elapsedSeconds = (Date.now() - geminiProgressStartTime) / 1000;
+        const estimatedSeconds = ESTIMATED_GEMINI_DURATION_SECONDS || 90;
+        const remainingSeconds = Math.max(0, Math.ceil(estimatedSeconds - elapsedSeconds));
+        geminiEta.textContent = `${remainingSeconds}s remaining (estimated)`;
+    }
+}
+
+function stopGeminiProgress(message) {
+    if (geminiProgressInterval) {
+        clearInterval(geminiProgressInterval);
+        geminiProgressInterval = null;
+    }
+    geminiProgressStartTime = null;
+
+    if (message && geminiProgressText) {
+        geminiProgressText.textContent = message;
+    }
+    if (message && geminiEta) {
+        geminiEta.textContent = 'Done';
+    }
 }
 
 function checkStatus() {
@@ -420,12 +578,7 @@ function startAnalysis(type) {
         formData.append('use_cache', useCache ? useCache.checked : false);
         formData.append('confidence', confidenceSlider ? confidenceSlider.value : 0.5);
 
-        if (progressSection && progressFill && progressText) {
-            progressSection.style.display = 'block';
-            progressFill.style.width = '0%';
-            progressFill.style.background = 'linear-gradient(90deg, #4ECDC4 0%, #45B7D1 100%)';
-            progressText.textContent = 'Starting local analysis...';
-        }
+        startProgressAnimation('Uploading PDF and preparing pages...');
 
         if (analyzeBtn) {
             analyzeBtn.disabled = true;
@@ -436,10 +589,7 @@ function startAnalysis(type) {
         if (startGeminiBtn) {
             startGeminiBtn.disabled = true;
         }
-        if (geminiProgress && geminiProgressText) {
-            geminiProgress.classList.remove('hidden');
-            geminiProgressText.textContent = 'Analyzing fire alarm scope with Gemini...';
-        }
+        startGeminiProgress('Analyzing fire alarm scope with Gemini...');
         if (geminiResultsSection) {
             geminiResultsSection.classList.add('hidden');
             geminiResultsSection.innerHTML = '';
@@ -467,11 +617,7 @@ function startAnalysis(type) {
         })
         .catch((error) => {
             if (type === 'local') {
-                if (progressText && progressFill) {
-                    progressText.textContent = `Error: ${error.message}`;
-                    progressFill.style.width = '100%';
-                    progressFill.style.background = '#ff6b6b';
-                }
+                failProgressAnimation(error.message);
             } else {
                 displayGeminiError(error.message);
             }
@@ -490,10 +636,7 @@ function startAnalysis(type) {
 function displayDetectionResults(data) {
     currentJobId = data.job_id || null;
 
-    if (progressFill && progressText) {
-        progressFill.style.width = '100%';
-        progressText.textContent = 'Analysis complete!';
-    }
+    finishProgressAnimation('Analysis complete!');
 
     if (!resultsSection) {
         return;
@@ -753,6 +896,7 @@ function displayGeminiResults(data) {
         return;
     }
 
+    stopGeminiProgress('Gemini analysis complete');
     geminiProgress.classList.add('hidden');
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
@@ -805,6 +949,7 @@ function displayGeminiResults(data) {
 function displayGeminiError(message) {
     if (!geminiResultsSection) return;
 
+    stopGeminiProgress('Gemini analysis stopped');
     if (geminiProgress) {
         geminiProgress.classList.add('hidden');
     }
