@@ -28,6 +28,41 @@ const geminiEta = document.getElementById('geminiEta');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
 
+const DEVICE_NAME_MAP = {
+    cm: 'Control Module',
+    co: 'CO Detector',
+    dd: 'Duct Detector',
+    dh: 'Door Holder',
+    ecap: 'Emergency Communications Access Panel',
+    ecps: 'Emergency Communications Power Supply',
+    ecs: 'Emergency Communication Station',
+    faap: 'Remote Annunciator',
+    facp: 'Fire Alarm Control Panel',
+    fsd: 'Fire/Smoke Damper',
+    h_w: 'Horn, Wall Mounted',
+    heat: 'Heat Detector',
+    hs_c: 'Horn/Strobe, Ceiling Mounted',
+    hs_w: 'Horn/Strobe, Wall Mounted',
+    hs_w_wp: 'Horn/Strobe, Wall Mounted, Weatherproof',
+    loc: 'Local Operating Console',
+    mm: 'Monitor Module',
+    nac: 'NAC Panel',
+    pull: 'Pull Station',
+    relay: 'Relay Module',
+    rts: 'Remote Test Switch',
+    s_w: 'Strobe, Wall Mounted',
+    s_w_wp: 'Strobe, Wall Mounted, Weatherproof',
+    sc: 'Strobe, Ceiling Mounted',
+    smoke: 'Smoke Detector',
+    'smoke-co': 'Smoke/CO Combo',
+    'smoke-sb': 'Smoke w/ Sounder Base',
+    sp_c: 'Speaker, Ceiling Mounted',
+    ss_c: 'Speaker/Strobe, Ceiling Mounted',
+    ss_w: 'Speaker/Strobe, Wall Mounted',
+    ts: 'Tamper Switch',
+    wf: 'Waterflow Switch',
+};
+
 let selectedFile = null;
 let currentJobId = null;
 let geminiConfigured = false;
@@ -714,6 +749,14 @@ function displayDetectionResults(data) {
 function aggregateDevicesByType(pageAnalyses = []) {
     const map = new Map();
 
+    const getDisplayName = (deviceType) => {
+        if (!deviceType) {
+            return 'Unknown Device';
+        }
+        const normalized = String(deviceType).toLowerCase();
+        return DEVICE_NAME_MAP[normalized] || deviceType;
+    };
+
     if (!Array.isArray(pageAnalyses)) {
         return [];
     }
@@ -729,11 +772,12 @@ function aggregateDevicesByType(pageAnalyses = []) {
             }
 
             const deviceType = device.device_type || 'Unknown Device';
-            if (!map.has(deviceType)) {
-                map.set(deviceType, []);
+            const displayName = getDisplayName(deviceType);
+            if (!map.has(displayName)) {
+                map.set(displayName, []);
             }
 
-            map.get(deviceType).push({
+            map.get(displayName).push({
                 page: page.page_number ?? device.page_number ?? null,
                 location: device.location || null,
                 confidence: typeof device.confidence === 'number' ? device.confidence : null,
