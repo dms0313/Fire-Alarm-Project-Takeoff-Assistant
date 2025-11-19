@@ -30,10 +30,9 @@ class GeminiAnalyzer:
         if GEMINI_API_KEY:
             try:
                 genai.configure(api_key=GEMINI_API_KEY)
-                self.model = genai.GenerativeModel(
-                    GEMINI_MODEL,
-                    system_instruction=SYSTEM_INSTRUCTIONS,
-                )
+                # SDK version pinned in requirements lacks system_instruction support,
+                # so prepend instructions manually to prompts.
+                self.model = genai.GenerativeModel(GEMINI_MODEL)
                 logger.info(f"✅ Gemini Analyzer initialized with model: {GEMINI_MODEL}")
             except Exception as e:
                 logger.error(f"Failed to initialize Gemini: {e}")
@@ -60,6 +59,11 @@ class GeminiAnalyzer:
         except Exception as exc:
             logger.error(f"Failed to parse JSON: {exc}")
             return default
+
+    @staticmethod
+    def _add_system_instruction(prompt: str) -> str:
+        """Prefix prompts with the system instruction for SDKs without native support."""
+        return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
 
     # -------------------------------------------------------------------------
     # Text extraction pipeline
@@ -142,7 +146,7 @@ COVER PAGE TEXT:
 {text}
 """
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {})
         except Exception as e:
             logger.error(f"Error extracting project info: {e}")
@@ -163,7 +167,7 @@ TEXT:
 {joined}
 """
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {e}")
@@ -186,7 +190,7 @@ TEXT:
 {mech_text}
 """
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), [])
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {e}")

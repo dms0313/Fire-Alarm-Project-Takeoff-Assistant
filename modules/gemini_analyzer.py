@@ -45,11 +45,10 @@ class GeminiFireAlarmAnalyzer:
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
-                # Use GEMINI_MODEL from config with targeted system instructions
-                self.model = genai.GenerativeModel(
-                    GEMINI_MODEL,
-                    system_instruction=SYSTEM_INSTRUCTIONS,
-                )
+                # Create model without system_instruction because pinned SDK version
+                # does not support that argument. System context is appended to each
+                # prompt instead.
+                self.model = genai.GenerativeModel(GEMINI_MODEL)
                 logger.info(f"✅ Gemini AI initialized successfully with {GEMINI_MODEL}")
                 self.initialization_error = None
             except Exception as e:
@@ -91,6 +90,11 @@ class GeminiFireAlarmAnalyzer:
             except Exception:
                 logger.error("Failed to parse JSON even after attempting fixes.")
                 return default
+
+    @staticmethod
+    def _add_system_instruction(prompt: str) -> str:
+        """Prefix prompts with the system instruction for SDKs without native support."""
+        return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
@@ -188,9 +192,9 @@ Extract the following information:
 Format your response as JSON with these keys: project_name, location, project_type, scope_summary, owner, architect, engineer, project_number.
 If information is not found, use null.
 """
-        
+
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {})
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
@@ -238,7 +242,7 @@ Return JSON with a single key fire_alarm_codes which is an array of strings. Use
 """
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             data = self._parse_json(getattr(response, "text", ""), {})
             if isinstance(data, dict) and 'fire_alarm_codes' not in data:
                 # Backwards compatibility with older schema
@@ -289,9 +293,9 @@ Format as JSON array with objects containing:
 Example:
 [{{"page": 5, "note_type": "System Requirement", "content": "All devices shall be addressable"}}]
 """
-        
+
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {str(e)}")
@@ -338,9 +342,9 @@ Format as JSON with keys:
 
 Only return devices that require fire alarm integration. Ignore generic HVAC notes or mechanical requirements that do not involve fire alarm monitoring or control. If none found, use empty arrays.
 """
-        
+
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {'duct_detectors': [], 'dampers': []})
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
@@ -379,9 +383,9 @@ Extract:
 Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM.
 Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
 """
-        
+
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {})
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
@@ -481,7 +485,7 @@ REPRESENTATIVE PROJECT TEXT:
 {combined_text}
 """
 
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(self._add_system_instruction(prompt))
             parsed = self._parse_json(getattr(response, "text", ""), default_summary)
 
             if not isinstance(parsed, dict):
