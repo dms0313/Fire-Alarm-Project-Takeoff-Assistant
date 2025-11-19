@@ -116,6 +116,13 @@ class GeminiFireAlarmAnalyzer:
             logger.info("Extracting specifications...")
             specifications = self._extract_specifications(pages_text, fa_pages)
             
+            structured_summary = self._generate_structured_takeoff(
+                pages_text,
+                project_info,
+                fa_pages,
+                mechanical_devices,
+            )
+
             results = {
                 'success': True,
                 'project_info': project_info,
@@ -124,6 +131,7 @@ class GeminiFireAlarmAnalyzer:
                 'fire_alarm_notes': fa_notes,
                 'mechanical_devices': mechanical_devices,
                 'specifications': specifications,
+                'structured_summary': structured_summary,
                 'total_pages': len(pages_text),
                 'analysis_timestamp': datetime.now().isoformat()
             }
@@ -359,3 +367,112 @@ Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
+
+    def _generate_structured_takeoff(
+        self,
+        pages_text: List[Dict[str, Any]],
+        project_info: Dict[str, Any],
+        fa_pages: List[int],
+        mechanical_devices: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Ask Gemini to build the consolidated summary + pitfalls."""
+
+        if not pages_text:
+            return {}
+
+        cover_text = "\n\n".join([p['text'] for p in pages_text[:5]])
+        fa_text = "\n\n".join(
+            [
+                f"PAGE {p['page_number']}:\n{p['text']}"
+                for p in pages_text
+                if p['page_number'] in fa_pages
+            ]
+        )
+        mechanical_text = "\n\n".join(
+            [
+                f"PAGE {p['page_number']}:\n{p['text']}"
+                for p in pages_text
+                if any(keyword in p['text'].lower() for keyword in ['mechanical', 'hvac', 'duct', 'rtu', 'ahu', 'damper'])
+            ]
+        )
+
+        combined_text = "\n\n".join(
+            filter(
+                None,
+                [
+                    "COVER + LIFE SAFETY EXCERPTS:\n" + cover_text[:6000] if cover_text else None,
+                    "FIRE ALARM SHEETS:\n" + fa_text[:8000] if fa_text else None,
+                    "MECHANICAL SHEETS (DUCTS/DAMPERS):\n" + mechanical_text[:6000]
+                    if mechanical_text
+                    else None,
+                ],
+            )
+        )
+
+        if not combined_text:
+            return {}
+
+        existing_details = []
+        for label, key in [
+            ("Project Name", "project_name"),
+            ("Location", "location"),
+            ("Project Type", "project_type"),
+            ("Owner", "owner"),
+            ("Architect", "architect"),
+            ("Engineer", "engineer"),
+        ]:
+            value = project_info.get(key)
+            if value:
+                existing_details.append(f"- {label}: {value}")
+
+        mech_summary = []
+        for group, devices in (mechanical_devices or {}).items():
+            if not isinstance(devices, list) or not devices:
+                continue
+            mech_summary.append(f"{group}: {len(devices)} referenced tie-ins")
+
+        context_summary = "\n".join(existing_details + mech_summary)
+
+        prompt = f"""
+You are a fire alarm sales estimator that reviews construction documents and extracts all unique fire alarm related details from a complete set of building plans, filtering out non-fire alarm related information and only returning project related unique details and specifications for commercial fire alarm systems. You are well versed in NFPA and IBC codes and you cross check the information given in construction documents with applicable code versions to determine if any inconsistencies or errors are present. You focus on the fire alarm pages, usually shown on “Special Systems” pages, “Power Plan” pages, or dedicated “Fire Alarm” pages. You always check mechanical pages for duct detectors and fire smoke damper details.
+
+Summarize the following project excerpts into the structured format shown after the text. Only include details that apply to the fire alarm scope.
+
+KNOWN PROJECT CONTEXT:
+{context_summary or 'Unknown project details provided above.'}
+
+CONSTRUCTION TEXT EXCERPTS:
+{combined_text}
+
+Return strict JSON using this schema (omit markdown code fences):
+{{
+  "project_details": {{
+    "project_name": string | null,
+    "project_location": string | null,
+    "building_type": string | null,
+    "construction_type": string | null,
+    "occupancy_groups": string | null,
+    "scope_overview": string | null
+  }},
+  "sections": {{
+    "applicable_codes_standards": list | dict | string,
+    "fire_alarm_equipment_scope": dict,
+    "mechanical_hvac_interface": dict,
+    "elevator_interface": list | dict | string,
+    "access_control_door_hardware": list | dict | string,
+    "estimating_notes_inconsistencies": list | dict | string,
+    "required_modules_summary": list | dict | string
+  }},
+  "possible_pitfalls": list of concise strings highlighting coordination risks or uncertainties that must be clarified before bidding
+}}
+
+Use numbering and terminology similar to the example summary provided, and include any code conflicts, voice vs horn discussion, elevator shunt trip requirements, sprinkler monitoring, and module counts when mentioned. If a section has no information, supply an empty array. Every output must be valid JSON.
+"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            parsed = self._parse_json(getattr(response, "text", ""), {})
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception as exc:
+            logger.error("Error generating structured takeoff: %s", exc)
+            return {}

@@ -759,11 +759,22 @@ function displayGeminiResults(data) {
         fire_alarm_notes: fireAlarmNotes = [],
         mechanical_devices: mechanicalDevices = {},
         specifications = {},
+        structured_summary: structuredSummary = {},
         total_pages: totalPages,
         analysis_timestamp: analysisTimestamp,
     } = data;
 
     geminiResultsSection.appendChild(buildProjectInfoCard(projectInfo));
+
+    const structuredSummaryCard = buildStructuredSummaryCard(structuredSummary);
+    if (structuredSummaryCard) {
+        geminiResultsSection.appendChild(structuredSummaryCard);
+    }
+
+    const pitfallsCard = buildPitfallsCard(structuredSummary);
+    if (pitfallsCard) {
+        geminiResultsSection.appendChild(pitfallsCard);
+    }
 
     const highLevelCard = buildHighLevelDetailsCard(specifications);
     if (highLevelCard) {
@@ -1027,6 +1038,172 @@ function buildSpecificationsCard(specifications = {}) {
     }
 
     return card;
+}
+
+function buildStructuredSummaryCard(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return null;
+    }
+
+    const projectDetails = structuredSummary.project_details || {};
+    const sections = structuredSummary.sections || {};
+    const hasDetails = Object.values(projectDetails).some((value) => Boolean(value));
+    const hasSections = Object.values(sections).some((value) => hasStructuredContent(value));
+
+    if (!hasDetails && !hasSections) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Fire Alarm Scope Summary', 'full-width');
+
+    if (hasDetails) {
+        const detailOrder = [
+            ['project_name', 'Project Name'],
+            ['project_location', 'Project Location'],
+            ['building_type', 'Building Type'],
+            ['construction_type', 'Construction Type'],
+            ['occupancy_groups', 'Occupancy Groups'],
+            ['scope_overview', 'Scope Overview'],
+        ];
+
+        detailOrder.forEach(([key, label]) => {
+            const value = projectDetails[key];
+            if (value) {
+                content.appendChild(createInfoRow(label, value));
+            }
+        });
+    }
+
+    const orderedSections = [
+        ['applicable_codes_standards', '1. Applicable Codes & Standards'],
+        ['fire_alarm_equipment_scope', '2. Fire Alarm System Equipment & Scope'],
+        ['mechanical_hvac_interface', '3. Mechanical & HVAC Interface'],
+        ['elevator_interface', '4. Elevator Interface'],
+        ['access_control_door_hardware', '5. Access Control & Door Hardware Interface'],
+        ['estimating_notes_inconsistencies', '6. Estimating Notes & Inconsistencies'],
+        ['required_modules_summary', '7. Required Modules Summary'],
+    ];
+
+    orderedSections.forEach(([key, label]) => {
+        const value = sections[key];
+        if (!hasStructuredContent(value)) {
+            return;
+        }
+        appendStructuredSummarySection(content, label, value);
+    });
+
+    return card;
+}
+
+function buildPitfallsCard(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return null;
+    }
+
+    const pitfalls = structuredSummary.possible_pitfalls;
+    if (!Array.isArray(pitfalls) || pitfalls.length === 0) {
+        return null;
+    }
+
+    const filtered = pitfalls.filter((item) => Boolean(item));
+    if (filtered.length === 0) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Possible Pitfalls / Things to Consider', 'full-width');
+    const list = document.createElement('ul');
+    list.className = 'pitfall-list';
+    filtered.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        list.appendChild(li);
+    });
+    content.appendChild(list);
+    return card;
+}
+
+function appendStructuredSummarySection(container, label, value) {
+    const header = document.createElement('h4');
+    header.textContent = label;
+    container.appendChild(header);
+    renderStructuredValue(container, value);
+}
+
+function renderStructuredValue(container, value) {
+    if (Array.isArray(value)) {
+        const list = document.createElement('ul');
+        if (value.length === 0) {
+            const li = document.createElement('li');
+            li.textContent = 'No data provided.';
+            list.appendChild(li);
+        } else {
+            value.forEach((item) => {
+                if (!item) {
+                    return;
+                }
+                const li = document.createElement('li');
+                if (typeof item === 'string') {
+                    li.textContent = item;
+                } else if (typeof item === 'object') {
+                    li.textContent = Object.entries(item)
+                        .map(([k, v]) => `${formatSummaryLabel(k)}: ${formatValue(v)}`)
+                        .join(' | ');
+                } else {
+                    li.textContent = String(item);
+                }
+                list.appendChild(li);
+            });
+        }
+        container.appendChild(list);
+        return;
+    }
+
+    if (value && typeof value === 'object') {
+        Object.entries(value).forEach(([key, nestedValue]) => {
+            if (!hasStructuredContent(nestedValue)) {
+                return;
+            }
+            const subheading = document.createElement('h5');
+            subheading.textContent = formatSummaryLabel(key);
+            container.appendChild(subheading);
+            renderStructuredValue(container, nestedValue);
+        });
+        return;
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = value.trim();
+        container.appendChild(paragraph);
+        return;
+    }
+
+    const paragraph = document.createElement('p');
+    paragraph.textContent = 'No details supplied.';
+    container.appendChild(paragraph);
+}
+
+function hasStructuredContent(value) {
+    if (!value && value !== 0) {
+        return false;
+    }
+    if (Array.isArray(value)) {
+        return value.some((item) => Boolean(item));
+    }
+    if (typeof value === 'object') {
+        return Object.values(value).some((item) => hasStructuredContent(item));
+    }
+    return typeof value === 'string' ? value.trim().length > 0 : true;
+}
+
+function formatSummaryLabel(label) {
+    if (!label) {
+        return 'Detail';
+    }
+    return label
+        .toString()
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function buildSummaryCard(totalPages, analysisTimestamp) {
