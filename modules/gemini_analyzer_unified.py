@@ -12,6 +12,7 @@ import os
 import json
 import re
 import logging
+from datetime import datetime
 from typing import List, Dict, Any
 
 import google.generativeai as genai
@@ -111,13 +112,21 @@ class GeminiAnalyzer:
             cover_data = self._analyze_cover_pages(pages[:3])
             fa_notes = self._extract_fa_notes(pages, fa_pages)
             mechanical = self._extract_mechanical_devices(pages)
+            structured_sections = self._analyze_report_sections(pages, fa_pages)
+            report = self._build_report_object(
+                cover_data=cover_data,
+                fa_pages=fa_pages,
+                ai_sections=structured_sections,
+                pages=pages,
+            )
 
             return {
                 "success": True,
                 "project_info": cover_data,
                 "fire_alarm_pages": fa_pages,
                 "fire_alarm_notes": fa_notes,
-                "mechanical_devices": mechanical
+                "mechanical_devices": mechanical,
+                "report": report,
             }
         except Exception as e:
             logger.error(f"Error in Gemini analysis: {e}", exc_info=True)
@@ -195,4 +204,227 @@ TEXT:
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {e}")
             return []
+
+    # -------------------------------------------------------------------------
+    # Comprehensive Report Extraction
+    # -------------------------------------------------------------------------
+    def _analyze_report_sections(
+        self, pages: List[Dict[str, Any]], fa_pages: List[int]
+    ) -> Dict[str, Any]:
+        """Gather all report sections with a single, structured Gemini prompt."""
+
+        # Prioritize identified FA pages, but fall back to full document text
+        relevant_pages = [
+            p for p in pages if not fa_pages or p.get("page_number") in fa_pages
+        ]
+        if not relevant_pages:
+            relevant_pages = pages
+
+        joined = "\n\n".join(
+            f"Page {p.get('page_number')}:\n{p.get('text', '')}" for p in relevant_pages
+        )
+        trimmed_text = joined[:60000]  # Protect against overly long prompts
+
+        prompt = f"""
+Review the following construction drawing text and extract structured fire alarm details.
+Return JSON ONLY with the exact schema below. Use concise evidence snippets or direct quotes
+from the plans for every bullet-level item.
+
+Expected JSON shape:
+{{
+  "system_architecture": {{
+    "system_type": string,
+    "panels": [{{"name": string, "location": string, "page": int|null, "notes": string, "evidence": string}}],
+    "network_topology": string,
+    "power_requirements": string,
+    "evidence": [string]
+  }},
+  "unique_area_notes": [
+    {{"area": string, "note": string, "page": int|null, "priority": string, "evidence": string}}
+  ],
+  "initiation_devices": {{
+    "devices": [
+      {{"device_type": string, "location": string, "quantity": int, "page": int|null, "notes": string, "evidence": string}}
+    ],
+    "totals": {{"<device_type>": int}}
+  }},
+  "notification_appliances": {{
+    "appliances": [
+      {{"type": string, "location": string, "quantity": int, "page": int|null, "output": string, "evidence": string}}
+    ],
+    "totals": {{"<type>": int}}
+  }},
+  "interfaces_modules": {{
+    "items": [
+      {{"type": string, "location": string, "quantity": int, "page": int|null, "purpose": string, "evidence": string}}
+    ],
+    "totals": {{"<type>": int}}
+  }},
+  "rfis": [
+    {{"question": string, "reason": string, "page": int|null, "evidence": string}}
+  ],
+  "takeoff_counts": {{
+    "overall_totals": {{
+      "initiation": {{"<device_type>": int}},
+      "notification": {{"<type>": int}},
+      "interfaces": {{"<type>": int}}
+    }},
+    "per_page": [
+      {{"page": int, "initiation": {{"<device_type>": int}}, "notification": {{"<type>": int}}, "interfaces": {{"<type>": int}}, "notes": string}}
+    ]
+  }}
+}}
+
+Rules:
+- Return valid JSON only (no markdown or commentary).
+- Use integers for quantities; default to 1 when not stated.
+- Prefer pages identified as fire alarm/special systems; include page numbers when known.
+- Evidence snippets should be short quotes that support the extracted data.
+
+SOURCE TEXT (trimmed):
+{trimmed_text}
+"""
+
+        try:
+            response = self.model.generate_content(self._add_system_instruction(prompt))
+            return self._parse_json(getattr(response, "text", ""), {})
+        except Exception as e:
+            logger.error(f"Error extracting structured report sections: {e}")
+            return {}
+
+    def _aggregate_totals(self, items: List[Dict[str, Any]], existing: Dict[str, int] | None) -> Dict[str, int]:
+        """Roll up quantity totals by device type, preserving any AI-provided totals."""
+
+        totals: Dict[str, int] = (existing or {}).copy()
+        for item in items or []:
+            device_type = next(
+                (str(item.get(key)).strip() for key in ("device_type", "type", "name", "category") if item.get(key)),
+                "unspecified",
+            )
+            raw_qty = item.get("quantity") or item.get("qty") or 1
+            try:
+                quantity = int(raw_qty)
+            except (TypeError, ValueError):
+                quantity = 1
+            totals[device_type] = totals.get(device_type, 0) + quantity
+        return totals
+
+    def _build_takeoff_counts(
+        self,
+        initiation_devices: List[Dict[str, Any]],
+        initiation_totals: Dict[str, int],
+        notification_appliances: List[Dict[str, Any]],
+        notification_totals: Dict[str, int],
+        interfaces: List[Dict[str, Any]],
+        interface_totals: Dict[str, int],
+        ai_takeoff: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        """Combine AI-provided takeoff counts with deterministic rollups."""
+
+        takeoff = (ai_takeoff or {}).copy()
+        takeoff.setdefault(
+            "overall_totals",
+            {
+                "initiation": initiation_totals,
+                "notification": notification_totals,
+                "interfaces": interface_totals,
+            },
+        )
+
+        per_page_map: Dict[Any, Dict[str, Any]] = {}
+
+        def _rollup(items: List[Dict[str, Any]], bucket: str) -> None:
+            for item in items or []:
+                page = item.get("page") or item.get("page_number")
+                if page in (None, ""):
+                    continue
+                device_type = next(
+                    (str(item.get(key)).strip() for key in ("device_type", "type", "name", "category") if item.get(key)),
+                    "unspecified",
+                )
+                raw_qty = item.get("quantity") or item.get("qty") or 1
+                try:
+                    quantity = int(raw_qty)
+                except (TypeError, ValueError):
+                    quantity = 1
+
+                bucket_row = per_page_map.setdefault(
+                    page, {"page": page, "initiation": {}, "notification": {}, "interfaces": {}}
+                )
+                bucket_totals = bucket_row[bucket]
+                bucket_totals[device_type] = bucket_totals.get(device_type, 0) + quantity
+
+        _rollup(initiation_devices, "initiation")
+        _rollup(notification_appliances, "notification")
+        _rollup(interfaces, "interfaces")
+
+        if per_page_map and not takeoff.get("per_page"):
+            takeoff["per_page"] = sorted(
+                per_page_map.values(), key=lambda row: row.get("page") or 0
+            )
+
+        return takeoff
+
+    def _build_report_object(
+        self,
+        cover_data: Dict[str, Any],
+        fa_pages: List[int],
+        ai_sections: Dict[str, Any],
+        pages: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Normalize AI sections into a comprehensive report object."""
+
+        system_architecture = ai_sections.get("system_architecture") or {}
+        unique_area_notes = ai_sections.get("unique_area_notes") or []
+
+        initiation_section = ai_sections.get("initiation_devices") or {}
+        initiation_devices = initiation_section.get("devices") or []
+        initiation_totals = self._aggregate_totals(
+            initiation_devices, initiation_section.get("totals")
+        )
+
+        notification_section = ai_sections.get("notification_appliances") or {}
+        notification_appliances = notification_section.get("appliances") or []
+        notification_totals = self._aggregate_totals(
+            notification_appliances, notification_section.get("totals")
+        )
+
+        interfaces_section = ai_sections.get("interfaces_modules") or {}
+        interface_items = interfaces_section.get("items") or []
+        interface_totals = self._aggregate_totals(
+            interface_items, interfaces_section.get("totals")
+        )
+
+        takeoff_counts = self._build_takeoff_counts(
+            initiation_devices,
+            initiation_totals,
+            notification_appliances,
+            notification_totals,
+            interface_items,
+            interface_totals,
+            ai_sections.get("takeoff_counts"),
+        )
+
+        return {
+            "generated_at": datetime.now().isoformat(),
+            "total_pages": len(pages),
+            "fire_alarm_pages": fa_pages,
+            "project_info": cover_data,
+            "system_architecture": system_architecture,
+            "unique_area_notes": unique_area_notes,
+            "initiation_devices": {
+                "devices": initiation_devices,
+                "totals": initiation_totals,
+            },
+            "notification_appliances": {
+                "appliances": notification_appliances,
+                "totals": notification_totals,
+            },
+            "interfaces_modules": {
+                "items": interface_items,
+                "totals": interface_totals,
+            },
+            "rfis": ai_sections.get("rfis") or [],
+            "takeoff_counts": takeoff_counts,
+        }
 
