@@ -22,8 +22,10 @@
                 <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
             </div>
             <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite"></div>
-            <div class="status-item">
-                <span>Model: <strong id="model-info">-</strong></span>
+            <div class="status-item model-selector">
+                <label for="geminiModelSelect">Gemini Model:</label>
+                <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
+                <span class="status-helper" id="model-info">-</span>
             </div>
         </div>
 

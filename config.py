@@ -109,7 +109,13 @@ LOCAL_MODEL_PATH, LOCAL_MODEL_FOUND, LOCAL_MODEL_SEARCH_PATHS = _collect_candida
 _RAW_GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 _RAW_GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3-preview"
+GEMINI_MODEL_CHOICES = [
+    "gemini-3-preview",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash-exp",
+]
 
 # =============================================================================
 # PROCESSING SETTINGS

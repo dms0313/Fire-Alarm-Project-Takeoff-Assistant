@@ -27,6 +27,7 @@ const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiEta = document.getElementById('geminiEta');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
+const geminiModelSelect = document.getElementById('geminiModelSelect');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -72,6 +73,7 @@ let progressInterval = null;
 let progressStartTime = null;
 let geminiProgressInterval = null;
 let geminiProgressStartTime = null;
+let availableGeminiModels = [];
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -80,6 +82,7 @@ const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
 DocumentReady(() => {
     setupUploadInteractions();
     setupControls();
+    setupModelSelector();
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -154,6 +157,14 @@ function setupControls() {
             confidenceValue.textContent = parseFloat(e.target.value).toFixed(2);
         });
     }
+}
+
+function setupModelSelector() {
+    if (!geminiModelSelect) {
+        return;
+    }
+
+    geminiModelSelect.addEventListener('change', handleGeminiModelChange);
 }
 
 function handleFiles(files) {
@@ -490,9 +501,12 @@ function checkStatus() {
 
             const modelInfo = document.getElementById('model-info');
             if (modelInfo) {
-                const modelLabel = data.gemini_model
-                    ? `Gemini: ${data.gemini_model}`
-                    : '';
+                availableGeminiModels = Array.isArray(data.available_gemini_models)
+                    ? data.available_gemini_models
+                    : [];
+                populateGeminiModelOptions(availableGeminiModels, data.gemini_model);
+
+                const modelLabel = data.gemini_model ? `Gemini: ${data.gemini_model}` : '';
                 const localLabel = data.local_model_filename
                     ? `Local: ${data.local_model_filename}`
                     : data.local_model_name
@@ -513,6 +527,68 @@ function checkStatus() {
             }
         })
         .catch((error) => console.error('Error checking status:', error));
+}
+
+function populateGeminiModelOptions(models = [], currentModel) {
+    if (!geminiModelSelect) {
+        return;
+    }
+
+    const uniqueModels = Array.from(new Set(models.filter(Boolean)));
+    geminiModelSelect.innerHTML = '';
+
+    if (uniqueModels.length === 0 && currentModel) {
+        uniqueModels.push(currentModel);
+    }
+
+    uniqueModels.forEach((model) => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        if (currentModel && model === currentModel) {
+            option.selected = true;
+        }
+        geminiModelSelect.appendChild(option);
+    });
+}
+
+function handleGeminiModelChange(event) {
+    const { value } = event.target;
+    if (!value) {
+        return;
+    }
+
+    geminiModelSelect.disabled = true;
+    const statusEl = document.getElementById('gemini-status-message');
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = `Switching Gemini model to ${value}...`;
+    }
+
+    fetch('/api/set_gemini_model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: value }),
+    })
+        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                throw new Error(data.error || 'Failed to switch Gemini model');
+            }
+            if (statusEl) {
+                statusEl.textContent = `Gemini model set to ${data.gemini_model}`;
+            }
+            checkStatus();
+        })
+        .catch((error) => {
+            console.error(error);
+            if (statusEl) {
+                statusEl.textContent = error.message;
+            }
+        })
+        .finally(() => {
+            geminiModelSelect.disabled = false;
+        });
 }
 
 function generatePagePreviews(file) {
@@ -964,6 +1040,8 @@ function displayGeminiResults(data) {
 
     const {
         project_info: projectInfo = {},
+        high_level_overview: highLevelOverview = {},
+        fire_alarm_briefing: fireAlarmBriefing = {},
         code_requirements: codeRequirements = {},
         fire_alarm_pages: fireAlarmPages = [],
         fire_alarm_notes: fireAlarmNotes = [],
@@ -974,11 +1052,24 @@ function displayGeminiResults(data) {
         analysis_timestamp: analysisTimestamp,
     } = data;
 
-    geminiResultsSection.appendChild(buildProjectInfoCard(projectInfo));
+    const overviewCard = buildHighLevelOverviewCard(highLevelOverview, projectInfo);
+    if (overviewCard) {
+        geminiResultsSection.appendChild(overviewCard);
+    }
 
-    const structuredSummaryCard = buildStructuredSummaryCard(structuredSummary);
-    if (structuredSummaryCard) {
-        geminiResultsSection.appendChild(structuredSummaryCard);
+    const briefingCard = buildFireAlarmBriefingCard(
+        fireAlarmBriefing,
+        structuredSummary,
+        fireAlarmNotes,
+        fireAlarmPages
+    );
+    if (briefingCard) {
+        geminiResultsSection.appendChild(briefingCard);
+    }
+
+    const mechanicalCard = buildMechanicalRequirementsCard(mechanicalDevices);
+    if (mechanicalCard) {
+        geminiResultsSection.appendChild(mechanicalCard);
     }
 
     const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
@@ -986,16 +1077,6 @@ function displayGeminiResults(data) {
         geminiResultsSection.appendChild(pitfallsCard);
     }
 
-    const highLevelCard = buildHighLevelDetailsCard(specifications);
-    if (highLevelCard) {
-        geminiResultsSection.appendChild(highLevelCard);
-    }
-
-    geminiResultsSection.appendChild(buildCodeCard(codeRequirements));
-    geminiResultsSection.appendChild(buildFireAlarmPagesCard(fireAlarmPages));
-    geminiResultsSection.appendChild(buildFireAlarmNotesCard(fireAlarmNotes));
-    geminiResultsSection.appendChild(buildMechanicalCard(mechanicalDevices));
-    geminiResultsSection.appendChild(buildSpecificationsCard(specifications));
     geminiResultsSection.appendChild(buildSummaryCard(totalPages, analysisTimestamp));
 }
 
@@ -1019,6 +1100,203 @@ function displayGeminiError(message) {
     content.appendChild(paragraph);
 
     geminiResultsSection.appendChild(card);
+}
+
+function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}) {
+    const resolved = {
+        ...fallbackProjectInfo,
+        ...overview,
+    };
+
+    const rows = [
+        ['Project Name', resolved.project_name || resolved.name],
+        ['Address / Location', resolved.project_address || resolved.project_location || resolved.location],
+        ['Project Type', resolved.project_type],
+        ['Fire Alarm Required', resolved.fire_alarm_required],
+        ['Sprinkler Status', resolved.sprinkler_status],
+    ];
+
+    const hasContent = rows.some(([, value]) => value) || resolved.scope_summary;
+    if (!hasContent) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Project Snapshot', 'full-width');
+    rows.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
+
+    if (resolved.scope_summary) {
+        const scopeHeading = document.createElement('h4');
+        scopeHeading.textContent = 'Scope Summary';
+        content.appendChild(scopeHeading);
+
+        const scopeParagraph = document.createElement('p');
+        scopeParagraph.textContent = resolved.scope_summary;
+        content.appendChild(scopeParagraph);
+    }
+
+    return card;
+}
+
+function buildFireAlarmBriefingCard(briefing = {}, structuredSummary = {}, fireAlarmNotes = [], fireAlarmPages = []) {
+    const requirements = [];
+    (briefing.requirements || []).forEach((item) => requirements.push(item));
+    (briefing.equipment || []).forEach((item) => requirements.push(item));
+
+    const { card, content } = createGeminiCard('Fire Alarm Briefing', 'full-width');
+    let populated = false;
+
+    if (requirements.length > 0) {
+        const reqHeading = document.createElement('h4');
+        reqHeading.textContent = 'Key Requirements & Equipment';
+        content.appendChild(reqHeading);
+
+        const list = document.createElement('ul');
+        requirements.forEach((req) => {
+            const li = document.createElement('li');
+            li.textContent = req;
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    const codes = Array.isArray(briefing.codes) ? briefing.codes : [];
+    if (codes.length > 0) {
+        const codeHeading = document.createElement('h4');
+        codeHeading.textContent = 'Referenced Fire Alarm Codes';
+        content.appendChild(codeHeading);
+
+        const chipContainer = document.createElement('div');
+        codes.forEach((code) => {
+            const chip = document.createElement('span');
+            chip.className = 'gemini-chip';
+            chip.textContent = code;
+            chipContainer.appendChild(chip);
+        });
+        content.appendChild(chipContainer);
+        populated = true;
+    }
+
+    const summarySections = structuredSummary && structuredSummary.sections ? structuredSummary.sections : {};
+    const estimatingNotes = summarySections.estimating_notes || [];
+    if (estimatingNotes.length > 0) {
+        const notesHeading = document.createElement('h4');
+        notesHeading.textContent = 'Estimating & Coordination Notes';
+        content.appendChild(notesHeading);
+
+        const list = document.createElement('ul');
+        estimatingNotes.forEach((note) => {
+            const li = document.createElement('li');
+            li.textContent = normalizeStructuredText(note);
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    const pages = Array.isArray(fireAlarmPages) ? fireAlarmPages : [];
+    if (pages.length > 0) {
+        const pageHeading = document.createElement('h4');
+        pageHeading.textContent = 'Fire Alarm Focus Pages';
+        content.appendChild(pageHeading);
+
+        const chipContainer = document.createElement('div');
+        pages.forEach((page) => {
+            const chip = document.createElement('span');
+            chip.className = 'gemini-chip';
+            chip.textContent = `Page ${page}`;
+            chipContainer.appendChild(chip);
+        });
+        content.appendChild(chipContainer);
+        populated = true;
+    }
+
+    const notes = Array.isArray(briefing.notes) && briefing.notes.length > 0 ? briefing.notes : fireAlarmNotes;
+    if (Array.isArray(notes) && notes.length > 0) {
+        const faNotesHeading = document.createElement('h4');
+        faNotesHeading.textContent = 'Project-Specific Fire Alarm Notes';
+        content.appendChild(faNotesHeading);
+
+        const list = document.createElement('ul');
+        notes.forEach((note) => {
+            if (!note) return;
+            const li = document.createElement('li');
+            const pageTag = document.createElement('span');
+            pageTag.className = 'note-page';
+            pageTag.textContent = `Pg ${note.page ?? '?'}`;
+            const noteText = document.createElement('span');
+            noteText.textContent = note.content || note.note || note.text || '';
+            li.appendChild(pageTag);
+            li.appendChild(noteText);
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    if (!populated) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = 'No fire alarm-specific requirements were identified in the AI summary.';
+        content.appendChild(paragraph);
+    }
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Packed summary of the fire alarm scope, codes, and keyed notes from the Gemini analysis.';
+    content.appendChild(helper);
+
+    return card;
+}
+
+function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
+    const { duct_detectors: ductDetectors = [], dampers = [] } = mechanicalDevices;
+    const hasDevices = (Array.isArray(ductDetectors) && ductDetectors.length > 0) || (Array.isArray(dampers) && dampers.length > 0);
+
+    if (!hasDevices) {
+        const { card, content } = createGeminiCard('Mechanical Requirements (Fire Alarm)', 'full-width');
+        const paragraph = document.createElement('p');
+        paragraph.textContent = 'No duct detector or smoke damper requirements were detected in the provided pages.';
+        content.appendChild(paragraph);
+        return card;
+    }
+
+    const { card, content } = createGeminiCard('Mechanical Requirements (Fire Alarm)', 'full-width');
+
+    const createDeviceSection = (title, devices) => {
+        const heading = document.createElement('h4');
+        heading.textContent = title;
+        content.appendChild(heading);
+
+        const list = document.createElement('ul');
+        if (Array.isArray(devices) && devices.length > 0) {
+            devices.forEach((device) => {
+                const li = document.createElement('li');
+                const parts = [];
+                if (device.page) parts.push(`Page ${device.page}`);
+                if (device.device_type) parts.push(device.device_type);
+                if (device.location) parts.push(device.location);
+                if (device.quantity) parts.push(`Qty ${device.quantity}`);
+                if (device.specifications) parts.push(device.specifications);
+                li.textContent = parts.filter(Boolean).join(' — ');
+                list.appendChild(li);
+            });
+        } else {
+            const li = document.createElement('li');
+            li.textContent = 'No devices noted.';
+            list.appendChild(li);
+        }
+        content.appendChild(list);
+    };
+
+    createDeviceSection('Duct Detectors', ductDetectors);
+    createDeviceSection('Smoke / Fire Dampers', dampers);
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Lists duct detectors and smoke dampers that must report to the fire alarm system for coordination with mechanical sheets.';
+    content.appendChild(helper);
+
+    return card;
 }
 
 function buildProjectInfoCard(projectInfo) {

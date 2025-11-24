@@ -14,7 +14,7 @@ import google.generativeai as genai
 
 # Corrected relative import for your module structure
 from .pdf_processor import PDFProcessor
-from config import GEMINI_API_KEY, GEMINI_MODEL # Assumes GEMINI_MODEL is in config
+from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_CHOICES  # Assumes GEMINI_MODEL is in config
 
 
 SYSTEM_INSTRUCTIONS = (
@@ -39,24 +39,43 @@ class GeminiFireAlarmAnalyzer:
         """Initialize Gemini analyzer"""
         self.api_key = api_key or GEMINI_API_KEY
         self.model = None
+        self.current_model = GEMINI_MODEL
+        self.available_models = GEMINI_MODEL_CHOICES
         self.pdf_processor = PDFProcessor()
         self.initialization_error: Optional[str] = None
 
         if self.api_key:
-            try:
-                genai.configure(api_key=self.api_key)
-                # Create model without system_instruction because pinned SDK version
-                # does not support that argument. System context is appended to each
-                # prompt instead.
-                self.model = genai.GenerativeModel(GEMINI_MODEL)
-                logger.info(f"✅ Gemini AI initialized successfully with {GEMINI_MODEL}")
-                self.initialization_error = None
-            except Exception as e:
-                self.initialization_error = str(e)
-                logger.error(f"Failed to initialize Gemini: {self.initialization_error}")
+            self._initialize_model(self.current_model)
         else:
             self.initialization_error = "GEMINI_API_KEY not found. AI Analysis will be disabled."
             logger.warning(self.initialization_error)
+
+    def _initialize_model(self, model_name: str) -> bool:
+        """Configure the Gemini client with the requested model."""
+
+        if not self.api_key:
+            self.initialization_error = "GEMINI_API_KEY not found. AI Analysis will be disabled."
+            logger.warning(self.initialization_error)
+            return False
+
+        try:
+            genai.configure(api_key=self.api_key)
+            self.model = genai.GenerativeModel(model_name)
+            self.current_model = model_name
+            self.initialization_error = None
+            logger.info(f"✅ Gemini AI initialized successfully with {model_name}")
+            return True
+        except Exception as exc:  # pragma: no cover - depends on runtime credentials
+            self.model = None
+            self.initialization_error = str(exc)
+            logger.error("Failed to initialize Gemini: %s", self.initialization_error)
+            return False
+
+    def update_model(self, model_name: str) -> bool:
+        """Switch the active Gemini text model at runtime."""
+
+        target = model_name or self.current_model
+        return True if target == self.current_model else self._initialize_model(target)
     
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
@@ -146,9 +165,19 @@ class GeminiFireAlarmAnalyzer:
             logger.info("Generating structured takeoff summary...")
             structured_summary = self._generate_structured_takeoff(pages_text, fa_pages)
 
+            high_level_overview = self._build_high_level_overview(project_info, specifications, structured_summary)
+            fire_alarm_briefing = self._build_fire_alarm_briefing(
+                codes,
+                specifications,
+                fa_notes,
+                structured_summary,
+            )
+
             results = {
                 'success': True,
                 'project_info': project_info,
+                'high_level_overview': high_level_overview,
+                'fire_alarm_briefing': fire_alarm_briefing,
                 'code_requirements': codes,
                 'fire_alarm_pages': fa_pages,
                 'fire_alarm_notes': fa_notes,
@@ -174,22 +203,22 @@ class GeminiFireAlarmAnalyzer:
         
         cover_text = "\n\n".join([p['text'] for p in cover_pages])
         
-        prompt = f"""Analyze these construction bid set cover pages and extract key project information.
+        prompt = f"""Analyze these construction bid set cover pages and extract ONLY the high-level project details that matter
+to a fire alarm estimator.
 
 COVER PAGES TEXT:
-{cover_text[:15000]} 
+{cover_text[:15000]}
 
 Extract the following information:
 1. PROJECT NAME: Official name of the project
-2. PROJECT LOCATION: Address or location
+2. PROJECT ADDRESS OR LOCATION: Street address or city/state reference
 3. PROJECT TYPE: (e.g., School, Hospital, Office Building, etc.)
-4. SCOPE SUMMARY: Brief summary of the overall project scope
-5. OWNER/CLIENT: Name of the project owner or client
-6. ARCHITECT: Name of the architecture firm
-7. ENGINEER: Name of the engineering firm(s)
-8. PROJECT NUMBER: Any project reference numbers
+4. FIRE ALARM REQUIRED: State "Yes", "No", or "Unknown" based on the documents
+5. SPRINKLER STATUS: Indicate if the building is sprinkled and if FA must monitor it
+6. SCOPE SUMMARY: Brief summary of the overall project scope
+7. PROJECT NUMBER: Any project reference numbers
 
-Format your response as JSON with these keys: project_name, location, project_type, scope_summary, owner, architect, engineer, project_number.
+Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, project_number.
 If information is not found, use null.
 """
 
@@ -504,3 +533,100 @@ REPRESENTATIVE PROJECT TEXT:
         except Exception as exc:
             logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
             return default_summary
+
+    # ---------------------------------------------------------------------
+    # Derived summary blocks for UI consumption
+    # ---------------------------------------------------------------------
+    def _build_high_level_overview(self, project_info: Dict[str, Any], specifications: Dict[str, Any], structured_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a concise project snapshot for the estimator-focused UI."""
+
+        sprinkler_status = project_info.get('sprinkler_status') or self._get_spec_value(specifications, 'SPRINKLER_SYSTEM')
+        fire_alarm_required = project_info.get('fire_alarm_required') or self._infer_requirement_from_summary(structured_summary)
+
+        return {
+            'project_name': project_info.get('project_name') or project_info.get('name'),
+            'project_address': project_info.get('project_address') or project_info.get('project_location') or project_info.get('location'),
+            'project_type': project_info.get('project_type'),
+            'fire_alarm_required': fire_alarm_required or 'Unknown',
+            'sprinkler_status': sprinkler_status,
+            'scope_summary': project_info.get('scope_summary'),
+            'project_number': project_info.get('project_number'),
+        }
+
+    def _build_fire_alarm_briefing(
+        self,
+        codes: Dict[str, Any],
+        specifications: Dict[str, Any],
+        fire_alarm_notes: List[Dict[str, Any]],
+        structured_summary: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Compile key requirements and notes for the fire alarm scope."""
+
+        requirement_items: List[str] = []
+        for label in [
+            'SYSTEM_TYPE',
+            'COMMUNICATION',
+            'MONITORING',
+            'AUDIO_SYSTEM',
+            'APPROVED_MANUFACTURERS',
+            'CONTROL_PANEL',
+        ]:
+            value = self._get_spec_value(specifications, label)
+            if value:
+                pretty_label = label.replace('_', ' ').title()
+                requirement_items.append(f"{pretty_label}: {value}")
+
+        equipment_items = []
+        if structured_summary:
+            sections = structured_summary.get('sections') or {}
+            equipment_items.extend(sections.get('equipment') or [])
+            codes_from_summary = sections.get('codes') or []
+            if codes_from_summary:
+                requirement_items.extend(codes_from_summary)
+
+        codes_list = []
+        if isinstance(codes, dict) and isinstance(codes.get('fire_alarm_codes'), list):
+            codes_list = codes['fire_alarm_codes']
+
+
+        return {
+            'requirements': requirement_items,
+            'equipment': equipment_items,
+            'codes': codes_list,
+            'notes': fire_alarm_notes or [],
+        }
+
+    def _get_spec_value(self, specifications: Dict[str, Any], key: str) -> Optional[Any]:
+        """Retrieve a specification value with flexible casing."""
+
+        if not specifications or not key:
+            return None
+
+        direct = specifications.get(key)
+        if direct:
+            return direct
+
+        lower = key.lower()
+        if lower in specifications:
+            return specifications[lower]
+
+        upper = key.upper()
+        if upper in specifications:
+            return specifications[upper]
+
+        return None
+
+    def _infer_requirement_from_summary(self, structured_summary: Dict[str, Any]) -> Optional[str]:
+        """Attempt to infer if fire alarm is required from the structured summary text."""
+
+        if not structured_summary or not isinstance(structured_summary, dict):
+            return None
+
+        notes = structured_summary.get('sections', {}).get('estimating_notes') or []
+        combined = " ".join([str(note) for note in notes]).lower()
+
+        if 'fire alarm not required' in combined or 'no fire alarm' in combined:
+            return 'No'
+        if 'fire alarm' in combined:
+            return 'Yes'
+        return None

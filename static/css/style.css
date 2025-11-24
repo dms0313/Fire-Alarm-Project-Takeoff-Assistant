@@ -53,6 +53,28 @@ h1 {
     gap: 10px;
 }
 
+.model-selector label {
+    font-weight: 600;
+}
+
+.model-selector select {
+    background: #1f1f1f;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.model-selector select:focus {
+    outline: 2px solid #4ECDC4;
+    border-color: #4ECDC4;
+}
+
+.status-helper {
+    color: #aaa;
+    font-size: 0.95rem;
+}
+
 .status-dot { 
     width: 12px;
     height: 12px;
