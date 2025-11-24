@@ -25,6 +25,8 @@ const pageHoverLabel = document.getElementById('pageHoverLabel');
 const exportBtn = document.getElementById('exportBtn');
 const startGeminiBtn = document.getElementById('startGeminiBtn');
 const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
+const copyGeminiBtn = document.getElementById('copyGeminiBtn');
+const copyGeminiStatus = document.getElementById('copyGeminiStatus');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiEta = document.getElementById('geminiEta');
@@ -77,6 +79,7 @@ let progressStartTime = null;
 let geminiProgressInterval = null;
 let geminiProgressStartTime = null;
 let availableGeminiModels = [];
+let latestGeminiResults = null;
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -142,6 +145,10 @@ function setupUploadInteractions() {
             }
             window.location.href = `/api/gemini_report/${currentGeminiJobId}`;
         });
+    }
+
+    if (copyGeminiBtn) {
+        copyGeminiBtn.addEventListener('click', copyGeminiSections);
     }
 
     if (selectAllBtn) {
@@ -301,6 +308,11 @@ function resetGeminiUI() {
         geminiResultsSection.innerHTML = '';
     }
     currentGeminiJobId = null;
+    latestGeminiResults = null;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = true;
+    }
+    setCopyStatus('');
     updateGeminiReportButtonState();
 }
 
@@ -338,6 +350,16 @@ function updateGeminiReportButtonState() {
         downloadGeminiReportBtn.disabled = true;
         downloadGeminiReportBtn.title = 'Run Gemini analysis to generate the detailed report';
     }
+}
+
+function setCopyStatus(message, tone = 'info') {
+    if (!copyGeminiStatus) {
+        return;
+    }
+
+    copyGeminiStatus.textContent = message || '';
+    copyGeminiStatus.classList.toggle('hidden', !message);
+    copyGeminiStatus.style.color = tone === 'error' ? '#ffb3b3' : '#d0e8ff';
 }
 
 function hideDetectionResults() {
@@ -766,6 +788,11 @@ function startAnalysis(type) {
             startGeminiBtn.disabled = true;
         }
         startGeminiProgress('Analyzing fire alarm scope with Gemini...');
+        if (copyGeminiBtn) {
+            copyGeminiBtn.disabled = true;
+        }
+        setCopyStatus('');
+        latestGeminiResults = null;
         if (geminiResultsSection) {
             geminiResultsSection.classList.add('hidden');
             geminiResultsSection.innerHTML = '';
@@ -1093,6 +1120,12 @@ function displayGeminiResults(data) {
 
     currentGeminiJobId = data.job_id || null;
     updateGeminiReportButtonState();
+    latestGeminiResults = data;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = false;
+        copyGeminiBtn.title = 'Copy the AI sections to your clipboard';
+    }
+    setCopyStatus('Ready to copy the Gemini summary and sections.');
 
     const {
         project_info: projectInfo = {},
@@ -1148,6 +1181,11 @@ function displayGeminiError(message) {
 
     currentGeminiJobId = null;
     updateGeminiReportButtonState();
+    latestGeminiResults = null;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = true;
+    }
+    setCopyStatus('');
 
     const { card, content } = createGeminiCard('Gemini Analysis Error', 'full-width');
 
@@ -1625,25 +1663,67 @@ function buildBulletListFromItems(items) {
 
 function buildPitfallsCard(structuredSummary = {}, fallbackPitfalls = []) {
     const pitfalls = extractPitfallItems(structuredSummary, fallbackPitfalls);
-    if (pitfalls.length === 0) {
+    const conflicts = collectConflictSignals(structuredSummary);
+    const advisories = collectAdvisoryNotes(structuredSummary);
+
+    if (pitfalls.length === 0 && conflicts.length === 0 && advisories.length === 0) {
         return null;
     }
 
-    const { card, content } = createGeminiCard('Possible Pitfalls / Things to Consider', 'full-width');
+    const { card, content } = createGeminiCard('Conflicts, Pitfalls & Advice', 'full-width');
     card.classList.add('pitfalls-card');
 
-    const list = document.createElement('ul');
-    list.className = 'pitfalls-list';
-    pitfalls.forEach((pitfall) => {
-        const li = document.createElement('li');
-        li.textContent = pitfall;
-        list.appendChild(li);
-    });
-    content.appendChild(list);
+    if (conflicts.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Potentially Conflicting Information';
+        content.appendChild(heading);
+
+        const conflictList = document.createElement('ul');
+        conflictList.className = 'insight-list';
+        conflicts.forEach((conflict) => {
+            const li = document.createElement('li');
+            li.textContent = conflict;
+            conflictList.appendChild(li);
+        });
+        content.appendChild(conflictList);
+    }
+
+    if (pitfalls.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Pitfalls / Things to Watch';
+        content.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'pitfalls-list';
+        pitfalls.forEach((pitfall) => {
+            const li = document.createElement('li');
+            li.textContent = pitfall;
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+    }
+
+    if (advisories.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Advice & Coordination Notes';
+        content.appendChild(heading);
+
+        const adviceList = document.createElement('ul');
+        adviceList.className = 'insight-list';
+        advisories.forEach((advice) => {
+            const li = document.createElement('li');
+            li.textContent = advice;
+            adviceList.appendChild(li);
+        });
+        content.appendChild(adviceList);
+    }
 
     const helper = document.createElement('p');
     helper.className = 'card-helper';
-    helper.textContent = 'Quick coordination risks pulled from the structured summary so estimators know what to flag.';
+    helper.textContent = 'Quick conflicts, risks, and coordination notes pulled from the structured summary so estimators know what to flag.';
     content.appendChild(helper);
 
     return card;
@@ -1684,6 +1764,98 @@ function extractPitfallItems(structuredSummary = {}, fallbackPitfalls = []) {
     });
 
     return pitfalls;
+}
+
+function collectConflictSignals(structuredSummary = {}) {
+    return collectFlaggedItemsFromSummary(structuredSummary, [
+        'conflict',
+        'discrep',
+        'mismatch',
+        'versus',
+        'inconsistent',
+        'not align',
+        'contradict',
+    ]);
+}
+
+function collectAdvisoryNotes(structuredSummary = {}) {
+    const baseNotes = [];
+    if (structuredSummary && structuredSummary.sections && structuredSummary.sections.estimating_notes) {
+        baseNotes.push(...structuredSummary.sections.estimating_notes);
+    }
+
+    const flagged = collectFlaggedItemsFromSummary(
+        structuredSummary,
+        ['verify', 'coordinate', 'confirm', 'tbd', 'unknown', 'not shown', 'by others', 'field', 'review']
+    );
+
+    const unique = new Set();
+    [...baseNotes, ...flagged].forEach((note) => {
+        const normalized = normalizeStructuredText(note);
+        if (normalized) {
+            unique.add(normalized);
+        }
+    });
+
+    return Array.from(unique);
+}
+
+function collectFlaggedItemsFromSummary(structuredSummary = {}, keywords = []) {
+    if (!keywords || keywords.length === 0) {
+        return [];
+    }
+
+    const normalizedKeywords = keywords.map((keyword) => keyword.toLowerCase());
+    const matches = new Set();
+
+    const texts = gatherSectionTexts(structuredSummary);
+    texts.forEach((text) => {
+        const normalized = normalizeStructuredText(text);
+        if (!normalized) {
+            return;
+        }
+        const lower = normalized.toLowerCase();
+        if (normalizedKeywords.some((keyword) => lower.includes(keyword))) {
+            matches.add(normalized);
+        }
+    });
+
+    return Array.from(matches);
+}
+
+function gatherSectionTexts(structuredSummary = {}) {
+    const texts = [];
+
+    const sections = getSectionsArray(structuredSummary);
+    const traverse = (section) => {
+        if (!section) {
+            return;
+        }
+        const summaryText = section.summary || section.description || section.text || section.detail;
+        if (summaryText) {
+            texts.push(summaryText);
+        }
+
+        const bulletSource = getSectionBulletSource(section);
+        flattenStructuredItems(bulletSource).forEach((item) => texts.push(item));
+
+        const nested = section.subsections || section.sections || section.children;
+        if (Array.isArray(nested)) {
+            nested.forEach(traverse);
+        }
+    };
+
+    sections.forEach(traverse);
+
+    if (structuredSummary && structuredSummary.sections) {
+        Object.values(structuredSummary.sections).forEach((value) => {
+            if (Array.isArray(value)) {
+                value.forEach((item) => texts.push(item));
+            }
+        });
+    }
+
+    return texts.filter(Boolean);
 }
 
 function serializeStructuredSummary(structuredSummary = {}) {
@@ -2078,6 +2250,107 @@ function formatSpecLabel(key) {
         .toString()
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function copyGeminiSections() {
+    if (!latestGeminiResults || !latestGeminiResults.success) {
+        setCopyStatus('Run Gemini analysis before copying sections.', 'error');
+        return;
+    }
+
+    const text = buildCopyableSectionsText(latestGeminiResults);
+    if (!text) {
+        setCopyStatus('No Gemini content is available to copy yet.', 'error');
+        return;
+    }
+
+    const onSuccess = () => setCopyStatus('Copied all Gemini sections to your clipboard.');
+    const onError = () =>
+        setCopyStatus('Unable to copy automatically. Select the text manually and use Ctrl/Cmd + C.', 'error');
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+            fallbackCopyToClipboard(text, onSuccess, onError);
+        });
+    } else {
+        fallbackCopyToClipboard(text, onSuccess, onError);
+    }
+}
+
+function fallbackCopyToClipboard(text, onSuccess, onError) {
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) {
+            onSuccess();
+        } else {
+            onError();
+        }
+    } catch (err) {
+        console.error('Copy failed', err);
+        onError();
+    }
+}
+
+function buildCopyableSectionsText(data = {}) {
+    const lines = [];
+    const overview = {
+        ...(data.project_info || {}),
+        ...(data.high_level_overview || {}),
+    };
+
+    const overviewLines = [];
+    appendFormattedLine('Project', overview.project_name || overview.name, overviewLines);
+    appendFormattedLine('Location', overview.project_address || overview.project_location || overview.location, overviewLines);
+    appendFormattedLine('Project Type', overview.project_type, overviewLines);
+    appendFormattedLine('Fire Alarm Required', overview.fire_alarm_required, overviewLines);
+    appendFormattedLine('Sprinkler Status', overview.sprinkler_status, overviewLines);
+    appendFormattedLine('Scope', overview.scope_summary, overviewLines);
+
+    if (overviewLines.length > 0) {
+        lines.push('Project Snapshot:');
+        lines.push(...overviewLines.map((line) => `- ${line}`));
+    }
+
+    const structuredSummary = data.structured_summary || {};
+    const serializedSummary = serializeStructuredSummary(structuredSummary);
+    if (serializedSummary) {
+        lines.push('', 'AI Structured Summary:', serializedSummary);
+    }
+
+    const conflicts = collectConflictSignals(structuredSummary);
+    const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
+    const advisories = collectAdvisoryNotes(structuredSummary);
+    if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
+        lines.push('', 'Conflicts / Pitfalls / Advice:');
+        conflicts.forEach((item, index) => lines.push(`C${index + 1}. ${item}`));
+        pitfalls.forEach((item, index) => lines.push(`P${index + 1}. ${item}`));
+        advisories.forEach((item, index) => lines.push(`A${index + 1}. ${item}`));
+    }
+
+    if (data.analysis_timestamp) {
+        const summaryDate = new Date(data.analysis_timestamp);
+        lines.push('', `Generated: ${summaryDate.toLocaleString()}`);
+    }
+
+    return lines.filter((line) => line !== undefined && line !== null).join('\n');
+}
+
+function appendFormattedLine(label, value, lines = []) {
+    if (!lines || !Array.isArray(lines)) {
+        return;
+    }
+    const normalized = normalizeStructuredText(value);
+    if (normalized) {
+        lines.push(`${label}: ${normalized}`);
+    }
 }
 
 function formatValue(value) {

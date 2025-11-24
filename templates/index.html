@@ -133,10 +133,16 @@
                 </p>
                 <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above whenever you need a fresh summary.</p>
                 <div class="gemini-actions">
-                    <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
-                        📄 Download Report
-                    </button>
+                    <div class="gemini-action-buttons">
+                        <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
+                            📄 Download Report
+                        </button>
+                        <button class="btn btn-secondary" id="copyGeminiBtn" disabled>
+                            📋 Copy All Sections
+                        </button>
+                    </div>
                     <p class="gemini-helper">Available after Gemini finishes so you can share a page-referenced report.</p>
+                    <p class="copy-helper hidden" id="copyGeminiStatus"></p>
                 </div>
             </div>
 
