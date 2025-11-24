@@ -22,6 +22,8 @@ const previewGrid = document.getElementById('previewGrid');
 const pageHoverPreview = document.getElementById('pageHoverPreview');
 const pageHoverImage = document.getElementById('pageHoverImage');
 const pageHoverLabel = document.getElementById('pageHoverLabel');
+const pageGridWrapper = document.getElementById('pageGridWrapper');
+const pageSelectionToggle = document.getElementById('pageSelectionToggle');
 const exportBtn = document.getElementById('exportBtn');
 const startGeminiBtn = document.getElementById('startGeminiBtn');
 const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
@@ -80,6 +82,8 @@ let geminiProgressInterval = null;
 let geminiProgressStartTime = null;
 let availableGeminiModels = [];
 let latestGeminiResults = null;
+let pageSelectionCollapsed = true;
+let geminiCardIdCounts = {};
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -89,6 +93,7 @@ DocumentReady(() => {
     setupUploadInteractions();
     setupControls();
     setupModelSelector();
+    setPageSelectionCollapsed(true);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -158,6 +163,10 @@ function setupUploadInteractions() {
     if (deselectAllBtn) {
         deselectAllBtn.addEventListener('click', deselectAllPages);
     }
+
+    if (pageSelectionToggle) {
+        pageSelectionToggle.addEventListener('click', () => setPageSelectionCollapsed(!pageSelectionCollapsed));
+    }
 }
 
 function setupControls() {
@@ -184,6 +193,24 @@ function hidePageHoverPreview() {
 
     pageHoverPreview.classList.add('hidden');
     pageHoverPreview.setAttribute('aria-hidden', 'true');
+
+    if (pageHoverImage) {
+        pageHoverImage.style.transform = 'scale(1.35)';
+        pageHoverImage.style.transformOrigin = '50% 50%';
+    }
+}
+
+function setPageSelectionCollapsed(collapsed) {
+    pageSelectionCollapsed = collapsed;
+
+    if (pageGridWrapper) {
+        pageGridWrapper.classList.toggle('collapsed', collapsed);
+    }
+
+    if (pageSelectionToggle) {
+        pageSelectionToggle.textContent = collapsed ? 'Expand Page Selection' : 'Collapse Page Selection';
+        pageSelectionToggle.setAttribute('aria-expanded', (!collapsed).toString());
+    }
 }
 
 function positionPageHoverPreview(event) {
@@ -210,6 +237,19 @@ function positionPageHoverPreview(event) {
     pageHoverPreview.style.top = `${top}px`;
 }
 
+function updatePageHoverMagnifier(event) {
+    if (!pageHoverImage || !event || !event.currentTarget) {
+        return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const relativeX = ((event.clientX - rect.left) / rect.width) * 100;
+    const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
+
+    pageHoverImage.style.transformOrigin = `${relativeX}% ${relativeY}%`;
+    pageHoverImage.style.transform = 'scale(1.65)';
+}
+
 function showPageHoverPreview(page, event) {
     if (!pageHoverPreview || !pageHoverImage || !pageHoverLabel) {
         return;
@@ -221,6 +261,7 @@ function showPageHoverPreview(page, event) {
     pageHoverPreview.classList.remove('hidden');
     pageHoverPreview.setAttribute('aria-hidden', 'false');
     positionPageHoverPreview(event);
+    updatePageHoverMagnifier(event);
 }
 
 function handleFiles(files) {
@@ -698,7 +739,10 @@ function generatePagePreviews(file) {
                     <div class="page-number">Page ${page.page_number}</div>
                 `;
                 pageThumb.addEventListener('mouseenter', (event) => showPageHoverPreview(page, event));
-                pageThumb.addEventListener('mousemove', positionPageHoverPreview);
+                pageThumb.addEventListener('mousemove', (event) => {
+                    positionPageHoverPreview(event);
+                    updatePageHoverMagnifier(event);
+                });
                 pageThumb.addEventListener('mouseleave', hidePageHoverPreview);
                 pageThumb.onclick = () => {
                     pageThumb.classList.toggle('selected');
@@ -710,6 +754,7 @@ function generatePagePreviews(file) {
             if (pageSelection) {
                 pageSelection.style.display = 'block';
             }
+            setPageSelectionCollapsed(true);
             updateSelectedCount();
         })
         .catch((error) => {
@@ -1112,6 +1157,7 @@ function displayGeminiResults(data) {
     geminiProgress.classList.add('hidden');
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
+    geminiCardIdCounts = {};
 
     if (!data || !data.success) {
         displayGeminiError(data && data.error ? data.error : 'Gemini analysis failed');
@@ -1167,6 +1213,65 @@ function displayGeminiResults(data) {
     }
 
     geminiResultsSection.appendChild(buildSummaryCard(totalPages, analysisTimestamp));
+
+    const tableOfContents = buildGeminiTableOfContents();
+    if (tableOfContents) {
+        geminiResultsSection.prepend(tableOfContents);
+    }
+}
+
+function buildGeminiTableOfContents() {
+    if (!geminiResultsSection) {
+        return null;
+    }
+
+    const cards = Array.from(geminiResultsSection.querySelectorAll('.gemini-card'));
+    if (!cards.length) {
+        return null;
+    }
+
+    const items = cards
+        .map((card) => {
+            const title = card.querySelector('.card-summary span')?.textContent?.trim();
+            const id = card.id;
+            if (!title || !id) {
+                return null;
+            }
+            return { id, title, card };
+        })
+        .filter(Boolean);
+
+    if (!items.length) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'gemini-toc';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Table of Contents';
+    container.appendChild(heading);
+
+    const list = document.createElement('ol');
+    items.forEach((item) => {
+        const listItem = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = `#${item.id}`;
+        link.textContent = item.title;
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            const target = document.getElementById(item.id);
+            if (target) {
+                target.open = true;
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+        listItem.appendChild(link);
+        list.appendChild(listItem);
+    });
+
+    container.appendChild(list);
+    return container;
 }
 
 function displayGeminiError(message) {
@@ -1178,6 +1283,7 @@ function displayGeminiError(message) {
     }
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
+    geminiCardIdCounts = {};
 
     currentGeminiJobId = null;
     updateGeminiReportButtonState();
@@ -2196,10 +2302,35 @@ function getSpecValue(specifications, key) {
     return undefined;
 }
 
+function buildGeminiCardId(title) {
+    if (!title) {
+        return '';
+    }
+
+    const baseId = `gemini-${title}`
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+
+    if (!geminiCardIdCounts[baseId]) {
+        geminiCardIdCounts[baseId] = 0;
+    }
+
+    geminiCardIdCounts[baseId] += 1;
+    const suffix = geminiCardIdCounts[baseId] > 1 ? `-${geminiCardIdCounts[baseId]}` : '';
+
+    return `${baseId}${suffix}`;
+}
+
 function createGeminiCard(title, extraClass) {
     const card = document.createElement('details');
     card.className = 'gemini-card';
     card.open = true;
+    const cardId = buildGeminiCardId(title);
+    if (cardId) {
+        card.id = cardId;
+    }
     if (extraClass) {
         card.classList.add(extraClass);
     }

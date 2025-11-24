@@ -49,8 +49,15 @@
                 </div>
 
                 <div class="page-selection" id="pageSelection">
-                    <h3 class="section-title">📄 Select Pages to Analyze</h3>
-                    <p class="section-subtitle">Selected pages: <strong id="selectedCount">0</strong></p>
+                    <div class="page-selection-header">
+                        <div>
+                            <h3 class="section-title">📄 Select Pages to Analyze</h3>
+                            <p class="section-subtitle">Selected pages: <strong id="selectedCount">0</strong></p>
+                        </div>
+                        <button type="button" class="collapse-toggle" id="pageSelectionToggle" aria-expanded="false">
+                            Expand Page Selection
+                        </button>
+                    </div>
                     <div class="page-selection-controls">
                         <button type="button" class="select-btn" id="selectAllBtn">Select All</button>
                         <button type="button" class="select-btn" id="deselectAllBtn">Clear Selection</button>
@@ -59,7 +66,9 @@
                         <img id="pageHoverImage" alt="Zoomed page preview">
                         <div class="page-hover-label" id="pageHoverLabel"></div>
                     </div>
-                    <div class="page-grid" id="pageGrid"></div>
+                    <div class="page-grid-wrapper collapsed" id="pageGridWrapper">
+                        <div class="page-grid" id="pageGrid"></div>
+                    </div>
                 </div>
 
                 <div class="options-grid">
