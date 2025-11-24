@@ -383,18 +383,30 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
         """Extract fire alarm system specifications"""
         
         fa_text = "\n\n".join([
-            f"PAGE {p['page_number']}:\n{p['text']}" 
-            for p in pages_text 
+            f"PAGE {p['page_number']}:\n{p['text']}"
+            for p in pages_text
             if p['page_number'] in fa_pages
         ])
-        
-        if not fa_text:
-            return {}
-        
-        prompt = f"""Extract fire alarm system specifications from these pages.
 
-FIRE ALARM PAGES:
-{fa_text[:15000]}
+        general_notes_text = "\n\n".join([
+            f"PAGE {p['page_number']}:\n{p['text']}"
+            for p in pages_text
+            if 'general note' in p.get('text', '').lower()
+        ])
+
+        combined_text = "\n\n".join(filter(None, [
+            "FIRE ALARM PAGES:\n" + fa_text if fa_text else "",
+            "GENERAL NOTES (include these when checking for existing panels):\n" + general_notes_text if general_notes_text else "",
+        ])).strip()
+
+        if not combined_text:
+            return {}
+
+        prompt = f"""Extract fire alarm system specifications from these pages. Always review fire alarm related notes AND any
+general notes to see if the plans list the manufacturer/model of an existing fire alarm control panel.
+
+SOURCE TEXT:
+{combined_text[:15000]}
 
 Extract:
 1. CONTROL PANEL: Manufacturer, model, features
@@ -408,6 +420,8 @@ Extract:
 9. SPRINKLER SYSTEM: State whether the building has a sprinkler system and how the fire alarm must monitor it.
 10. APPROVED MANUFACTURERS: List any specific fire alarm manufacturers/brands the specifications call out (return an array).
 11. AUDIO / VOICE SYSTEM: Specify if a voice evacuation or audio system is required, optional, or explicitly not required.
+12. EXISTING SYSTEM PANEL MODEL: If the drawings mention an existing fire alarm panel to remain, capture the exact
+    manufacturer and model number from any fire alarm notes or general notes. Return null if nothing is referenced.
 
 Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM.
 Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.

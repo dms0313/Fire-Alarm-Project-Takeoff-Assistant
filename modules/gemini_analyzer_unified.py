@@ -213,10 +213,19 @@ TEXT:
     ) -> Dict[str, Any]:
         """Gather all report sections with a single, structured Gemini prompt."""
 
-        # Prioritize identified FA pages, but fall back to full document text
+        # Prioritize identified FA pages and always include general notes for context
         relevant_pages = [
             p for p in pages if not fa_pages or p.get("page_number") in fa_pages
         ]
+
+        general_note_pages = [
+            p for p in pages if "general note" in p.get("text", "").lower()
+        ]
+
+        for p in general_note_pages:
+            if p not in relevant_pages:
+                relevant_pages.append(p)
+
         if not relevant_pages:
             relevant_pages = pages
 
@@ -228,7 +237,9 @@ TEXT:
         prompt = f"""
 Review the following construction drawing text and extract structured fire alarm details.
 Return JSON ONLY with the exact schema below. Use concise evidence snippets or direct quotes
-from the plans for every bullet-level item.
+from the plans for every bullet-level item. Always review fire alarm related notes and any
+general notes to confirm whether the plans list the manufacturer/model of any existing
+fire alarm control panel; capture that in the panels array with clear notes and evidence.
 
 Expected JSON shape:
 {{
