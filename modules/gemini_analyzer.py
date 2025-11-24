@@ -585,9 +585,9 @@ REPRESENTATIVE PROJECT TEXT:
                 requirement_items.extend(codes_from_summary)
 
         codes_list = []
-        if isinstance(codes, dict):
-            if isinstance(codes.get('fire_alarm_codes'), list):
-                codes_list = codes['fire_alarm_codes']
+        if isinstance(codes, dict) and isinstance(codes.get('fire_alarm_codes'), list):
+            codes_list = codes['fire_alarm_codes']
+
 
         return {
             'requirements': requirement_items,
