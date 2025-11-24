@@ -53,7 +53,8 @@ def register_analysis_routes(app, analyzer):
             'local_model_filename': model_filename,
             'local_detector_error': analyzer.local_detector_error,
             'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
-            'gemini_model': getattr(config, 'GEMINI_MODEL', None),
+            'gemini_model': getattr(analyzer.gemini_analyzer, 'current_model', getattr(config, 'GEMINI_MODEL', None)),
+            'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
         }
 
         if expose_model_path:
@@ -64,6 +65,27 @@ def register_analysis_routes(app, analyzer):
             response['model_path'] = None
 
         return jsonify(response)
+
+    @app.route("/api/set_gemini_model", methods=["POST"])
+    def set_gemini_model():
+        """Switch the active Gemini text model at runtime."""
+
+        payload = request.get_json(silent=True) or {}
+        model = payload.get('model')
+
+        if not model:
+            return jsonify({'success': False, 'error': 'Model name is required'}), 400
+
+        allowed_models = getattr(config, 'GEMINI_MODEL_CHOICES', [])
+        if allowed_models and model not in allowed_models:
+            return jsonify({'success': False, 'error': 'Model not in allowed list'}), 400
+
+        if not analyzer.gemini_analyzer.update_model(model):
+            error = getattr(analyzer.gemini_analyzer, 'initialization_error', 'Failed to initialize model')
+            return jsonify({'success': False, 'error': error}), 500
+
+        config.GEMINI_MODEL = model
+        return jsonify({'success': True, 'gemini_model': model})
 
     @app.route("/api/analyze", methods=["POST"])
     def analyze_pdf():
