@@ -75,10 +75,7 @@ class GeminiFireAlarmAnalyzer:
         """Switch the active Gemini text model at runtime."""
 
         target = model_name or self.current_model
-        if target == self.current_model:
-            return True
-
-        return self._initialize_model(target)
+        return True if target == self.current_model else self._initialize_model(target)
     
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
