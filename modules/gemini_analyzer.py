@@ -348,7 +348,7 @@ class GeminiFireAlarmAnalyzer:
         fa_pages = self._identify_fire_alarm_pages(pages_text)
 
         electrical_keywords = [
-            "electrical", "power plan", "distribution", "lighting plan", "lighting schedule
+            "electrical", "power plan", "distribution", "lighting plan", "lighting schedule",
             "panel schedule", "special systems", "fire alarm general notes",
         ]
         electrical_pages = [
