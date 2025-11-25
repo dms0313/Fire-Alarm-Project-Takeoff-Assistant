@@ -36,6 +36,25 @@ def _ensure_absolute(path: Path, base: Path) -> Path:
     return (base / expanded).resolve()
 
 
+def _int_from_env(var_name: str, default: int) -> int:
+    """Return an integer environment value or a default when parsing fails."""
+
+    raw_value = os.environ.get(var_name)
+    if raw_value is None:
+        return default
+
+    try:
+        return int(raw_value)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Invalid integer for %s: %s. Using default %s.",
+            var_name,
+            raw_value,
+            default,
+        )
+        return default
+
+
 def _iter_env_candidates(env_path: str, cwd: Path) -> Iterable[Path]:
     """Yield candidate paths derived from the LOCAL_MODEL_PATH environment value."""
 
@@ -109,7 +128,15 @@ LOCAL_MODEL_PATH, LOCAL_MODEL_FOUND, LOCAL_MODEL_SEARCH_PATHS = _collect_candida
 _RAW_GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 _RAW_GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3-pro-preview"
+GEMINI_MODEL_CHOICES = [
+    "gemini-3-pro-preview",
+    "gemini-2.0-pro-exp",
+    "gemini-2.5-pro-preview-03-25",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash-lite-preview",
+    "gemini-2.0-flash-exp",
+]
 
 # =============================================================================
 # PROCESSING SETTINGS
@@ -120,6 +147,7 @@ OVERLAP_PERCENT = 0.25
 DEFAULT_CONFIDENCE = 0.40
 MAX_WORKERS = 4
 MAX_CACHE_SIZE = 1000
+GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 60000)
 
 # =============================================================================
 # FLASK SETTINGS

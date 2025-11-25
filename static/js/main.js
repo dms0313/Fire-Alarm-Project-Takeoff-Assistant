@@ -19,14 +19,23 @@ const resultsSummary = document.getElementById('resultsSummary');
 const devicesGrid = document.getElementById('devicesGrid');
 const previewSection = document.getElementById('previewSection');
 const previewGrid = document.getElementById('previewGrid');
+const pageHoverPreview = document.getElementById('pageHoverPreview');
+const pageHoverImage = document.getElementById('pageHoverImage');
+const pageHoverLabel = document.getElementById('pageHoverLabel');
+const pageHoverLens = document.getElementById('pageHoverLens');
+const pageGridWrapper = document.getElementById('pageGridWrapper');
+const pageSelectionToggle = document.getElementById('pageSelectionToggle');
 const exportBtn = document.getElementById('exportBtn');
 const startGeminiBtn = document.getElementById('startGeminiBtn');
 const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
+const copyGeminiBtn = document.getElementById('copyGeminiBtn');
+const copyGeminiStatus = document.getElementById('copyGeminiStatus');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiEta = document.getElementById('geminiEta');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
+const geminiModelSelect = document.getElementById('geminiModelSelect');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -72,6 +81,10 @@ let progressInterval = null;
 let progressStartTime = null;
 let geminiProgressInterval = null;
 let geminiProgressStartTime = null;
+let availableGeminiModels = [];
+let latestGeminiResults = null;
+let pageSelectionCollapsed = true;
+let geminiCardIdCounts = {};
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -80,6 +93,8 @@ const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
 DocumentReady(() => {
     setupUploadInteractions();
     setupControls();
+    setupModelSelector();
+    setPageSelectionCollapsed(true);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -138,12 +153,20 @@ function setupUploadInteractions() {
         });
     }
 
+    if (copyGeminiBtn) {
+        copyGeminiBtn.addEventListener('click', copyGeminiSections);
+    }
+
     if (selectAllBtn) {
         selectAllBtn.addEventListener('click', selectAllPages);
     }
 
     if (deselectAllBtn) {
         deselectAllBtn.addEventListener('click', deselectAllPages);
+    }
+
+    if (pageSelectionToggle) {
+        pageSelectionToggle.addEventListener('click', () => setPageSelectionCollapsed(!pageSelectionCollapsed));
     }
 }
 
@@ -154,6 +177,116 @@ function setupControls() {
             confidenceValue.textContent = parseFloat(e.target.value).toFixed(2);
         });
     }
+}
+
+function setupModelSelector() {
+    if (!geminiModelSelect) {
+        return;
+    }
+
+    geminiModelSelect.addEventListener('change', handleGeminiModelChange);
+}
+
+function hidePageHoverPreview() {
+    if (!pageHoverPreview) {
+        return;
+    }
+
+    pageHoverPreview.classList.add('hidden');
+    pageHoverPreview.setAttribute('aria-hidden', 'true');
+
+    if (pageHoverLens) {
+        pageHoverLens.classList.add('hidden');
+        pageHoverLens.setAttribute('aria-hidden', 'true');
+    }
+
+    if (pageHoverImage) {
+        pageHoverImage.style.transform = 'scale(1.2)';
+        pageHoverImage.style.transformOrigin = '50% 50%';
+    }
+}
+
+function setPageSelectionCollapsed(collapsed) {
+    pageSelectionCollapsed = collapsed;
+
+    if (pageGridWrapper) {
+        pageGridWrapper.classList.toggle('collapsed', collapsed);
+    }
+
+    if (pageSelectionToggle) {
+        pageSelectionToggle.textContent = collapsed ? 'Expand Page Selection' : 'Collapse Page Selection';
+        pageSelectionToggle.setAttribute('aria-expanded', (!collapsed).toString());
+    }
+}
+
+function positionPageHoverPreview(target) {
+    if (!pageHoverPreview || !target) {
+        return;
+    }
+
+    const offset = 16;
+    const previewWidth = pageHoverPreview.offsetWidth || 260;
+    const previewHeight = pageHoverPreview.offsetHeight || 320;
+
+    const rect = target.getBoundingClientRect();
+    let left = rect.right + offset;
+
+    if (left + previewWidth > window.innerWidth - offset) {
+        left = Math.max(offset, rect.left - previewWidth - offset);
+    }
+
+    let top = rect.top + rect.height / 2 - previewHeight / 2;
+    const maxTop = window.innerHeight - previewHeight - offset;
+    top = Math.max(offset, Math.min(top, maxTop));
+
+    pageHoverPreview.style.left = `${left}px`;
+    pageHoverPreview.style.top = `${top}px`;
+}
+
+function updatePageHoverMagnifier(event) {
+    if (!pageHoverImage || !event || !event.currentTarget) {
+        return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const relativeX = ((event.clientX - rect.left) / rect.width) * 100;
+    const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
+
+    pageHoverImage.style.transformOrigin = `${relativeX}% ${relativeY}%`;
+    pageHoverImage.style.transform = 'scale(1.35)';
+
+    if (pageHoverLens && pageHoverPreview) {
+        const lensSize = pageHoverLens.offsetWidth || 180;
+        const halfLens = lensSize / 2;
+        const previewRect = pageHoverPreview.getBoundingClientRect();
+        let lensLeft = (previewRect.width * (relativeX / 100)) - halfLens;
+        let lensTop = (previewRect.height * (relativeY / 100)) - halfLens;
+
+        lensLeft = Math.min(Math.max(8, lensLeft), previewRect.width - lensSize - 8);
+        lensTop = Math.min(Math.max(8, lensTop), previewRect.height - lensSize - 8);
+
+        pageHoverLens.style.left = `${lensLeft}px`;
+        pageHoverLens.style.top = `${lensTop}px`;
+        pageHoverLens.style.backgroundImage = `url(${pageHoverImage.src})`;
+        pageHoverLens.style.backgroundSize = '220%';
+        pageHoverLens.style.backgroundPosition = `${relativeX}% ${relativeY}%`;
+        pageHoverLens.classList.remove('hidden');
+        pageHoverLens.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function showPageHoverPreview(page, event) {
+    if (!pageHoverPreview || !pageHoverImage || !pageHoverLabel) {
+        return;
+    }
+
+    pageHoverImage.src = page.thumbnail;
+    pageHoverImage.alt = `Zoomed preview of page ${page.page_number}`;
+    pageHoverLabel.textContent = `Page ${page.page_number}`;
+    pageHoverPreview.classList.remove('hidden');
+    pageHoverPreview.setAttribute('aria-hidden', 'false');
+    positionPageHoverPreview(event?.currentTarget);
+    updatePageHoverMagnifier(event);
 }
 
 function handleFiles(files) {
@@ -227,6 +360,7 @@ function showError(message) {
     if (pageSelection) {
         pageSelection.style.display = 'none';
     }
+    hidePageHoverPreview();
 }
 
 function resetGeminiUI() {
@@ -240,6 +374,11 @@ function resetGeminiUI() {
         geminiResultsSection.innerHTML = '';
     }
     currentGeminiJobId = null;
+    latestGeminiResults = null;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = true;
+    }
+    setCopyStatus('');
     updateGeminiReportButtonState();
 }
 
@@ -279,6 +418,16 @@ function updateGeminiReportButtonState() {
     }
 }
 
+function setCopyStatus(message, tone = 'info') {
+    if (!copyGeminiStatus) {
+        return;
+    }
+
+    copyGeminiStatus.textContent = message || '';
+    copyGeminiStatus.classList.toggle('hidden', !message);
+    copyGeminiStatus.style.color = tone === 'error' ? '#ffb3b3' : '#d0e8ff';
+}
+
 function hideDetectionResults() {
     if (resultsSection) {
         resultsSection.style.display = 'none';
@@ -295,6 +444,7 @@ function hideDetectionResults() {
     if (previewGrid) {
         previewGrid.innerHTML = '';
     }
+    hidePageHoverPreview();
     stopProgressAnimation();
     if (progressSection) {
         progressSection.style.display = 'none';
@@ -490,9 +640,12 @@ function checkStatus() {
 
             const modelInfo = document.getElementById('model-info');
             if (modelInfo) {
-                const modelLabel = data.gemini_model
-                    ? `Gemini: ${data.gemini_model}`
-                    : '';
+                availableGeminiModels = Array.isArray(data.available_gemini_models)
+                    ? data.available_gemini_models
+                    : [];
+                populateGeminiModelOptions(availableGeminiModels, data.gemini_model);
+
+                const modelLabel = data.gemini_model ? `Gemini: ${data.gemini_model}` : '';
                 const localLabel = data.local_model_filename
                     ? `Local: ${data.local_model_filename}`
                     : data.local_model_name
@@ -515,6 +668,68 @@ function checkStatus() {
         .catch((error) => console.error('Error checking status:', error));
 }
 
+function populateGeminiModelOptions(models = [], currentModel) {
+    if (!geminiModelSelect) {
+        return;
+    }
+
+    const uniqueModels = Array.from(new Set(models.filter(Boolean)));
+    geminiModelSelect.innerHTML = '';
+
+    if (uniqueModels.length === 0 && currentModel) {
+        uniqueModels.push(currentModel);
+    }
+
+    uniqueModels.forEach((model) => {
+        const option = document.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        if (currentModel && model === currentModel) {
+            option.selected = true;
+        }
+        geminiModelSelect.appendChild(option);
+    });
+}
+
+function handleGeminiModelChange(event) {
+    const { value } = event.target;
+    if (!value) {
+        return;
+    }
+
+    geminiModelSelect.disabled = true;
+    const statusEl = document.getElementById('gemini-status-message');
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = `Switching Gemini model to ${value}...`;
+    }
+
+    fetch('/api/set_gemini_model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: value }),
+    })
+        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                throw new Error(data.error || 'Failed to switch Gemini model');
+            }
+            if (statusEl) {
+                statusEl.textContent = `Gemini model set to ${data.gemini_model}`;
+            }
+            checkStatus();
+        })
+        .catch((error) => {
+            console.error(error);
+            if (statusEl) {
+                statusEl.textContent = error.message;
+            }
+        })
+        .finally(() => {
+            geminiModelSelect.disabled = false;
+        });
+}
+
 function generatePagePreviews(file) {
     const formData = new FormData();
     formData.append('pdf', file);
@@ -522,6 +737,7 @@ function generatePagePreviews(file) {
     if (pageSelection) {
         pageSelection.style.display = 'none';
     }
+    hidePageHoverPreview();
 
     fetch('/api/preview_pages', {
         method: 'POST',
@@ -547,6 +763,12 @@ function generatePagePreviews(file) {
                     <img src="${page.thumbnail}" alt="Page ${page.page_number}">
                     <div class="page-number">Page ${page.page_number}</div>
                 `;
+                pageThumb.addEventListener('mouseenter', (event) => showPageHoverPreview(page, event));
+                pageThumb.addEventListener('mousemove', (event) => {
+                    positionPageHoverPreview(event.currentTarget);
+                    updatePageHoverMagnifier(event);
+                });
+                pageThumb.addEventListener('mouseleave', hidePageHoverPreview);
                 pageThumb.onclick = () => {
                     pageThumb.classList.toggle('selected');
                     updateSelectedCount();
@@ -557,11 +779,13 @@ function generatePagePreviews(file) {
             if (pageSelection) {
                 pageSelection.style.display = 'block';
             }
+            setPageSelectionCollapsed(true);
             updateSelectedCount();
         })
         .catch((error) => {
             console.error('Error:', error);
             showError('Error generating page previews');
+            hidePageHoverPreview();
         });
 }
 
@@ -634,6 +858,11 @@ function startAnalysis(type) {
             startGeminiBtn.disabled = true;
         }
         startGeminiProgress('Analyzing fire alarm scope with Gemini...');
+        if (copyGeminiBtn) {
+            copyGeminiBtn.disabled = true;
+        }
+        setCopyStatus('');
+        latestGeminiResults = null;
         if (geminiResultsSection) {
             geminiResultsSection.classList.add('hidden');
             geminiResultsSection.innerHTML = '';
@@ -953,6 +1182,7 @@ function displayGeminiResults(data) {
     geminiProgress.classList.add('hidden');
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
+    geminiCardIdCounts = {};
 
     if (!data || !data.success) {
         displayGeminiError(data && data.error ? data.error : 'Gemini analysis failed');
@@ -961,9 +1191,17 @@ function displayGeminiResults(data) {
 
     currentGeminiJobId = data.job_id || null;
     updateGeminiReportButtonState();
+    latestGeminiResults = data;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = false;
+        copyGeminiBtn.title = 'Copy the AI sections to your clipboard';
+    }
+    setCopyStatus('Ready to copy the Gemini summary and sections.');
 
     const {
         project_info: projectInfo = {},
+        high_level_overview: highLevelOverview = {},
+        fire_alarm_briefing: fireAlarmBriefing = {},
         code_requirements: codeRequirements = {},
         fire_alarm_pages: fireAlarmPages = [],
         fire_alarm_notes: fireAlarmNotes = [],
@@ -974,11 +1212,24 @@ function displayGeminiResults(data) {
         analysis_timestamp: analysisTimestamp,
     } = data;
 
-    geminiResultsSection.appendChild(buildProjectInfoCard(projectInfo));
+    const overviewCard = buildHighLevelOverviewCard(highLevelOverview, projectInfo);
+    if (overviewCard) {
+        geminiResultsSection.appendChild(overviewCard);
+    }
 
-    const structuredSummaryCard = buildStructuredSummaryCard(structuredSummary);
-    if (structuredSummaryCard) {
-        geminiResultsSection.appendChild(structuredSummaryCard);
+    const briefingCard = buildFireAlarmBriefingCard(
+        fireAlarmBriefing,
+        structuredSummary,
+        fireAlarmNotes,
+        fireAlarmPages
+    );
+    if (briefingCard) {
+        geminiResultsSection.appendChild(briefingCard);
+    }
+
+    const mechanicalCard = buildMechanicalRequirementsCard(mechanicalDevices);
+    if (mechanicalCard) {
+        geminiResultsSection.appendChild(mechanicalCard);
     }
 
     const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
@@ -986,17 +1237,66 @@ function displayGeminiResults(data) {
         geminiResultsSection.appendChild(pitfallsCard);
     }
 
-    const highLevelCard = buildHighLevelDetailsCard(specifications);
-    if (highLevelCard) {
-        geminiResultsSection.appendChild(highLevelCard);
+    geminiResultsSection.appendChild(buildSummaryCard(totalPages, analysisTimestamp));
+
+    const tableOfContents = buildGeminiTableOfContents();
+    if (tableOfContents) {
+        geminiResultsSection.prepend(tableOfContents);
+    }
+}
+
+function buildGeminiTableOfContents() {
+    if (!geminiResultsSection) {
+        return null;
     }
 
-    geminiResultsSection.appendChild(buildCodeCard(codeRequirements));
-    geminiResultsSection.appendChild(buildFireAlarmPagesCard(fireAlarmPages));
-    geminiResultsSection.appendChild(buildFireAlarmNotesCard(fireAlarmNotes));
-    geminiResultsSection.appendChild(buildMechanicalCard(mechanicalDevices));
-    geminiResultsSection.appendChild(buildSpecificationsCard(specifications));
-    geminiResultsSection.appendChild(buildSummaryCard(totalPages, analysisTimestamp));
+    const cards = Array.from(geminiResultsSection.querySelectorAll('.gemini-card'));
+    if (!cards.length) {
+        return null;
+    }
+
+    const items = cards
+        .map((card) => {
+            const title = card.querySelector('.card-summary span')?.textContent?.trim();
+            const id = card.id;
+            if (!title || !id) {
+                return null;
+            }
+            return { id, title, card };
+        })
+        .filter(Boolean);
+
+    if (!items.length) {
+        return null;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'gemini-toc';
+
+    const heading = document.createElement('h3');
+    heading.textContent = 'Table of Contents';
+    container.appendChild(heading);
+
+    const list = document.createElement('ol');
+    items.forEach((item) => {
+        const listItem = document.createElement('li');
+        const link = document.createElement('a');
+        link.href = `#${item.id}`;
+        link.textContent = item.title;
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            const target = document.getElementById(item.id);
+            if (target) {
+                target.open = true;
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+        listItem.appendChild(link);
+        list.appendChild(listItem);
+    });
+
+    container.appendChild(list);
+    return container;
 }
 
 function displayGeminiError(message) {
@@ -1008,9 +1308,15 @@ function displayGeminiError(message) {
     }
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
+    geminiCardIdCounts = {};
 
     currentGeminiJobId = null;
     updateGeminiReportButtonState();
+    latestGeminiResults = null;
+    if (copyGeminiBtn) {
+        copyGeminiBtn.disabled = true;
+    }
+    setCopyStatus('');
 
     const { card, content } = createGeminiCard('Gemini Analysis Error', 'full-width');
 
@@ -1019,6 +1325,203 @@ function displayGeminiError(message) {
     content.appendChild(paragraph);
 
     geminiResultsSection.appendChild(card);
+}
+
+function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}) {
+    const resolved = {
+        ...fallbackProjectInfo,
+        ...overview,
+    };
+
+    const rows = [
+        ['Project Name', resolved.project_name || resolved.name],
+        ['Address / Location', resolved.project_address || resolved.project_location || resolved.location],
+        ['Project Type', resolved.project_type],
+        ['Fire Alarm Required', resolved.fire_alarm_required],
+        ['Sprinkler Status', resolved.sprinkler_status],
+    ];
+
+    const hasContent = rows.some(([, value]) => value) || resolved.scope_summary;
+    if (!hasContent) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Project Snapshot', 'full-width');
+    rows.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
+
+    if (resolved.scope_summary) {
+        const scopeHeading = document.createElement('h4');
+        scopeHeading.textContent = 'Scope Summary';
+        content.appendChild(scopeHeading);
+
+        const scopeParagraph = document.createElement('p');
+        scopeParagraph.textContent = resolved.scope_summary;
+        content.appendChild(scopeParagraph);
+    }
+
+    return card;
+}
+
+function buildFireAlarmBriefingCard(briefing = {}, structuredSummary = {}, fireAlarmNotes = [], fireAlarmPages = []) {
+    const requirements = [];
+    (briefing.requirements || []).forEach((item) => requirements.push(item));
+    (briefing.equipment || []).forEach((item) => requirements.push(item));
+
+    const { card, content } = createGeminiCard('Fire Alarm Briefing', 'full-width');
+    let populated = false;
+
+    if (requirements.length > 0) {
+        const reqHeading = document.createElement('h4');
+        reqHeading.textContent = 'Key Requirements & Equipment';
+        content.appendChild(reqHeading);
+
+        const list = document.createElement('ul');
+        requirements.forEach((req) => {
+            const li = document.createElement('li');
+            li.textContent = req;
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    const codes = Array.isArray(briefing.codes) ? briefing.codes : [];
+    if (codes.length > 0) {
+        const codeHeading = document.createElement('h4');
+        codeHeading.textContent = 'Referenced Fire Alarm Codes';
+        content.appendChild(codeHeading);
+
+        const chipContainer = document.createElement('div');
+        codes.forEach((code) => {
+            const chip = document.createElement('span');
+            chip.className = 'gemini-chip';
+            chip.textContent = code;
+            chipContainer.appendChild(chip);
+        });
+        content.appendChild(chipContainer);
+        populated = true;
+    }
+
+    const summarySections = structuredSummary && structuredSummary.sections ? structuredSummary.sections : {};
+    const estimatingNotes = summarySections.estimating_notes || [];
+    if (estimatingNotes.length > 0) {
+        const notesHeading = document.createElement('h4');
+        notesHeading.textContent = 'Estimating & Coordination Notes';
+        content.appendChild(notesHeading);
+
+        const list = document.createElement('ul');
+        estimatingNotes.forEach((note) => {
+            const li = document.createElement('li');
+            li.textContent = normalizeStructuredText(note);
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    const pages = Array.isArray(fireAlarmPages) ? fireAlarmPages : [];
+    if (pages.length > 0) {
+        const pageHeading = document.createElement('h4');
+        pageHeading.textContent = 'Fire Alarm Focus Pages';
+        content.appendChild(pageHeading);
+
+        const chipContainer = document.createElement('div');
+        pages.forEach((page) => {
+            const chip = document.createElement('span');
+            chip.className = 'gemini-chip';
+            chip.textContent = `Page ${page}`;
+            chipContainer.appendChild(chip);
+        });
+        content.appendChild(chipContainer);
+        populated = true;
+    }
+
+    const notes = Array.isArray(briefing.notes) && briefing.notes.length > 0 ? briefing.notes : fireAlarmNotes;
+    if (Array.isArray(notes) && notes.length > 0) {
+        const faNotesHeading = document.createElement('h4');
+        faNotesHeading.textContent = 'Project-Specific Fire Alarm Notes';
+        content.appendChild(faNotesHeading);
+
+        const list = document.createElement('ul');
+        notes.forEach((note) => {
+            if (!note) return;
+            const li = document.createElement('li');
+            const pageTag = document.createElement('span');
+            pageTag.className = 'note-page';
+            pageTag.textContent = `Pg ${note.page ?? '?'}`;
+            const noteText = document.createElement('span');
+            noteText.textContent = note.content || note.note || note.text || '';
+            li.appendChild(pageTag);
+            li.appendChild(noteText);
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+        populated = true;
+    }
+
+    if (!populated) {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = 'No fire alarm-specific requirements were identified in the AI summary.';
+        content.appendChild(paragraph);
+    }
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Packed summary of the fire alarm scope, codes, and keyed notes from the Gemini analysis.';
+    content.appendChild(helper);
+
+    return card;
+}
+
+function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
+    const { duct_detectors: ductDetectors = [], dampers = [] } = mechanicalDevices;
+    const hasDevices = (Array.isArray(ductDetectors) && ductDetectors.length > 0) || (Array.isArray(dampers) && dampers.length > 0);
+
+    if (!hasDevices) {
+        const { card, content } = createGeminiCard('Mechanical Requirements (Fire Alarm)', 'full-width');
+        const paragraph = document.createElement('p');
+        paragraph.textContent = 'No duct detector or smoke damper requirements were detected in the provided pages.';
+        content.appendChild(paragraph);
+        return card;
+    }
+
+    const { card, content } = createGeminiCard('Mechanical Requirements (Fire Alarm)', 'full-width');
+
+    const createDeviceSection = (title, devices) => {
+        const heading = document.createElement('h4');
+        heading.textContent = title;
+        content.appendChild(heading);
+
+        const list = document.createElement('ul');
+        if (Array.isArray(devices) && devices.length > 0) {
+            devices.forEach((device) => {
+                const li = document.createElement('li');
+                const parts = [];
+                if (device.page) parts.push(`Page ${device.page}`);
+                if (device.device_type) parts.push(device.device_type);
+                if (device.location) parts.push(device.location);
+                if (device.quantity) parts.push(`Qty ${device.quantity}`);
+                if (device.specifications) parts.push(device.specifications);
+                li.textContent = parts.filter(Boolean).join(' — ');
+                list.appendChild(li);
+            });
+        } else {
+            const li = document.createElement('li');
+            li.textContent = 'No devices noted.';
+            list.appendChild(li);
+        }
+        content.appendChild(list);
+    };
+
+    createDeviceSection('Duct Detectors', ductDetectors);
+    createDeviceSection('Smoke / Fire Dampers', dampers);
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Lists duct detectors and smoke dampers that must report to the fire alarm system for coordination with mechanical sheets.';
+    content.appendChild(helper);
+
+    return card;
 }
 
 function buildProjectInfoCard(projectInfo) {
@@ -1291,25 +1794,67 @@ function buildBulletListFromItems(items) {
 
 function buildPitfallsCard(structuredSummary = {}, fallbackPitfalls = []) {
     const pitfalls = extractPitfallItems(structuredSummary, fallbackPitfalls);
-    if (pitfalls.length === 0) {
+    const conflicts = collectConflictSignals(structuredSummary);
+    const advisories = collectAdvisoryNotes(structuredSummary);
+
+    if (pitfalls.length === 0 && conflicts.length === 0 && advisories.length === 0) {
         return null;
     }
 
-    const { card, content } = createGeminiCard('Possible Pitfalls / Things to Consider', 'full-width');
+    const { card, content } = createGeminiCard('Conflicts, Pitfalls & Advice', 'full-width');
     card.classList.add('pitfalls-card');
 
-    const list = document.createElement('ul');
-    list.className = 'pitfalls-list';
-    pitfalls.forEach((pitfall) => {
-        const li = document.createElement('li');
-        li.textContent = pitfall;
-        list.appendChild(li);
-    });
-    content.appendChild(list);
+    if (conflicts.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Potentially Conflicting Information';
+        content.appendChild(heading);
+
+        const conflictList = document.createElement('ul');
+        conflictList.className = 'insight-list';
+        conflicts.forEach((conflict) => {
+            const li = document.createElement('li');
+            li.textContent = conflict;
+            conflictList.appendChild(li);
+        });
+        content.appendChild(conflictList);
+    }
+
+    if (pitfalls.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Pitfalls / Things to Watch';
+        content.appendChild(heading);
+
+        const list = document.createElement('ul');
+        list.className = 'pitfalls-list';
+        pitfalls.forEach((pitfall) => {
+            const li = document.createElement('li');
+            li.textContent = pitfall;
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+    }
+
+    if (advisories.length > 0) {
+        const heading = document.createElement('h4');
+        heading.className = 'insight-group-title';
+        heading.textContent = 'Advice & Coordination Notes';
+        content.appendChild(heading);
+
+        const adviceList = document.createElement('ul');
+        adviceList.className = 'insight-list';
+        advisories.forEach((advice) => {
+            const li = document.createElement('li');
+            li.textContent = advice;
+            adviceList.appendChild(li);
+        });
+        content.appendChild(adviceList);
+    }
 
     const helper = document.createElement('p');
     helper.className = 'card-helper';
-    helper.textContent = 'Quick coordination risks pulled from the structured summary so estimators know what to flag.';
+    helper.textContent = 'Quick conflicts, risks, and coordination notes pulled from the structured summary so estimators know what to flag.';
     content.appendChild(helper);
 
     return card;
@@ -1350,6 +1895,98 @@ function extractPitfallItems(structuredSummary = {}, fallbackPitfalls = []) {
     });
 
     return pitfalls;
+}
+
+function collectConflictSignals(structuredSummary = {}) {
+    return collectFlaggedItemsFromSummary(structuredSummary, [
+        'conflict',
+        'discrep',
+        'mismatch',
+        'versus',
+        'inconsistent',
+        'not align',
+        'contradict',
+    ]);
+}
+
+function collectAdvisoryNotes(structuredSummary = {}) {
+    const baseNotes = [];
+    if (structuredSummary && structuredSummary.sections && structuredSummary.sections.estimating_notes) {
+        baseNotes.push(...structuredSummary.sections.estimating_notes);
+    }
+
+    const flagged = collectFlaggedItemsFromSummary(
+        structuredSummary,
+        ['verify', 'coordinate', 'confirm', 'tbd', 'unknown', 'not shown', 'by others', 'field', 'review']
+    );
+
+    const unique = new Set();
+    [...baseNotes, ...flagged].forEach((note) => {
+        const normalized = normalizeStructuredText(note);
+        if (normalized) {
+            unique.add(normalized);
+        }
+    });
+
+    return Array.from(unique);
+}
+
+function collectFlaggedItemsFromSummary(structuredSummary = {}, keywords = []) {
+    if (!keywords || keywords.length === 0) {
+        return [];
+    }
+
+    const normalizedKeywords = keywords.map((keyword) => keyword.toLowerCase());
+    const matches = new Set();
+
+    const texts = gatherSectionTexts(structuredSummary);
+    texts.forEach((text) => {
+        const normalized = normalizeStructuredText(text);
+        if (!normalized) {
+            return;
+        }
+        const lower = normalized.toLowerCase();
+        if (normalizedKeywords.some((keyword) => lower.includes(keyword))) {
+            matches.add(normalized);
+        }
+    });
+
+    return Array.from(matches);
+}
+
+function gatherSectionTexts(structuredSummary = {}) {
+    const texts = [];
+
+    const sections = getSectionsArray(structuredSummary);
+    const traverse = (section) => {
+        if (!section) {
+            return;
+        }
+        const summaryText = section.summary || section.description || section.text || section.detail;
+        if (summaryText) {
+            texts.push(summaryText);
+        }
+
+        const bulletSource = getSectionBulletSource(section);
+        flattenStructuredItems(bulletSource).forEach((item) => texts.push(item));
+
+        const nested = section.subsections || section.sections || section.children;
+        if (Array.isArray(nested)) {
+            nested.forEach(traverse);
+        }
+    };
+
+    sections.forEach(traverse);
+
+    if (structuredSummary && structuredSummary.sections) {
+        Object.values(structuredSummary.sections).forEach((value) => {
+            if (Array.isArray(value)) {
+                value.forEach((item) => texts.push(item));
+            }
+        });
+    }
+
+    return texts.filter(Boolean);
 }
 
 function serializeStructuredSummary(structuredSummary = {}) {
@@ -1690,10 +2327,35 @@ function getSpecValue(specifications, key) {
     return undefined;
 }
 
+function buildGeminiCardId(title) {
+    if (!title) {
+        return '';
+    }
+
+    const baseId = `gemini-${title}`
+        .toLowerCase()
+        .replace(/[^a-z0-9\s-]/g, '')
+        .trim()
+        .replace(/\s+/g, '-');
+
+    if (!geminiCardIdCounts[baseId]) {
+        geminiCardIdCounts[baseId] = 0;
+    }
+
+    geminiCardIdCounts[baseId] += 1;
+    const suffix = geminiCardIdCounts[baseId] > 1 ? `-${geminiCardIdCounts[baseId]}` : '';
+
+    return `${baseId}${suffix}`;
+}
+
 function createGeminiCard(title, extraClass) {
     const card = document.createElement('details');
     card.className = 'gemini-card';
     card.open = true;
+    const cardId = buildGeminiCardId(title);
+    if (cardId) {
+        card.id = cardId;
+    }
     if (extraClass) {
         card.classList.add(extraClass);
     }
@@ -1744,6 +2406,107 @@ function formatSpecLabel(key) {
         .toString()
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function copyGeminiSections() {
+    if (!latestGeminiResults || !latestGeminiResults.success) {
+        setCopyStatus('Run Gemini analysis before copying sections.', 'error');
+        return;
+    }
+
+    const text = buildCopyableSectionsText(latestGeminiResults);
+    if (!text) {
+        setCopyStatus('No Gemini content is available to copy yet.', 'error');
+        return;
+    }
+
+    const onSuccess = () => setCopyStatus('Copied all Gemini sections to your clipboard.');
+    const onError = () =>
+        setCopyStatus('Unable to copy automatically. Select the text manually and use Ctrl/Cmd + C.', 'error');
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+            fallbackCopyToClipboard(text, onSuccess, onError);
+        });
+    } else {
+        fallbackCopyToClipboard(text, onSuccess, onError);
+    }
+}
+
+function fallbackCopyToClipboard(text, onSuccess, onError) {
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) {
+            onSuccess();
+        } else {
+            onError();
+        }
+    } catch (err) {
+        console.error('Copy failed', err);
+        onError();
+    }
+}
+
+function buildCopyableSectionsText(data = {}) {
+    const lines = [];
+    const overview = {
+        ...(data.project_info || {}),
+        ...(data.high_level_overview || {}),
+    };
+
+    const overviewLines = [];
+    appendFormattedLine('Project', overview.project_name || overview.name, overviewLines);
+    appendFormattedLine('Location', overview.project_address || overview.project_location || overview.location, overviewLines);
+    appendFormattedLine('Project Type', overview.project_type, overviewLines);
+    appendFormattedLine('Fire Alarm Required', overview.fire_alarm_required, overviewLines);
+    appendFormattedLine('Sprinkler Status', overview.sprinkler_status, overviewLines);
+    appendFormattedLine('Scope', overview.scope_summary, overviewLines);
+
+    if (overviewLines.length > 0) {
+        lines.push('Project Snapshot:');
+        lines.push(...overviewLines.map((line) => `- ${line}`));
+    }
+
+    const structuredSummary = data.structured_summary || {};
+    const serializedSummary = serializeStructuredSummary(structuredSummary);
+    if (serializedSummary) {
+        lines.push('', 'AI Structured Summary:', serializedSummary);
+    }
+
+    const conflicts = collectConflictSignals(structuredSummary);
+    const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
+    const advisories = collectAdvisoryNotes(structuredSummary);
+    if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
+        lines.push('', 'Conflicts / Pitfalls / Advice:');
+        conflicts.forEach((item, index) => lines.push(`C${index + 1}. ${item}`));
+        pitfalls.forEach((item, index) => lines.push(`P${index + 1}. ${item}`));
+        advisories.forEach((item, index) => lines.push(`A${index + 1}. ${item}`));
+    }
+
+    if (data.analysis_timestamp) {
+        const summaryDate = new Date(data.analysis_timestamp);
+        lines.push('', `Generated: ${summaryDate.toLocaleString()}`);
+    }
+
+    return lines.filter((line) => line !== undefined && line !== null).join('\n');
+}
+
+function appendFormattedLine(label, value, lines = []) {
+    if (!lines || !Array.isArray(lines)) {
+        return;
+    }
+    const normalized = normalizeStructuredText(value);
+    if (normalized) {
+        lines.push(`${label}: ${normalized}`);
+    }
 }
 
 function formatValue(value) {
