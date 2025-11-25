@@ -616,6 +616,7 @@ h1 {
     font-weight: bold;
 }
 
+
 .page-hover-preview {
     position: fixed;
     background: #1f1f1f;
@@ -627,6 +628,7 @@ h1 {
     pointer-events: none;
     z-index: 1000;
     transition: opacity 0.15s ease;
+    overflow: hidden;
 }
 
 .page-hover-preview img {
@@ -638,6 +640,20 @@ h1 {
     transform: scale(1.35);
     transform-origin: 50% 50%;
     transition: transform 0.2s ease, transform-origin 0.2s ease;
+}
+
+.page-hover-lens {
+    position: absolute;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    border: 2px solid rgba(78, 205, 196, 0.9);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    background-repeat: no-repeat;
+    background-color: #111;
+    mix-blend-mode: screen;
+    opacity: 0.95;
 }
 
 .page-hover-label {

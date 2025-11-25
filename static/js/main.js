@@ -22,6 +22,7 @@ const previewGrid = document.getElementById('previewGrid');
 const pageHoverPreview = document.getElementById('pageHoverPreview');
 const pageHoverImage = document.getElementById('pageHoverImage');
 const pageHoverLabel = document.getElementById('pageHoverLabel');
+const pageHoverLens = document.getElementById('pageHoverLens');
 const pageGridWrapper = document.getElementById('pageGridWrapper');
 const pageSelectionToggle = document.getElementById('pageSelectionToggle');
 const exportBtn = document.getElementById('exportBtn');
@@ -194,8 +195,13 @@ function hidePageHoverPreview() {
     pageHoverPreview.classList.add('hidden');
     pageHoverPreview.setAttribute('aria-hidden', 'true');
 
+    if (pageHoverLens) {
+        pageHoverLens.classList.add('hidden');
+        pageHoverLens.setAttribute('aria-hidden', 'true');
+    }
+
     if (pageHoverImage) {
-        pageHoverImage.style.transform = 'scale(1.35)';
+        pageHoverImage.style.transform = 'scale(1.2)';
         pageHoverImage.style.transformOrigin = '50% 50%';
     }
 }
@@ -213,8 +219,8 @@ function setPageSelectionCollapsed(collapsed) {
     }
 }
 
-function positionPageHoverPreview(event) {
-    if (!pageHoverPreview || !event) {
+function positionPageHoverPreview(target) {
+    if (!pageHoverPreview || !target) {
         return;
     }
 
@@ -222,16 +228,16 @@ function positionPageHoverPreview(event) {
     const previewWidth = pageHoverPreview.offsetWidth || 260;
     const previewHeight = pageHoverPreview.offsetHeight || 320;
 
-    let left = event.clientX + offset;
-    let top = event.clientY + offset;
+    const rect = target.getBoundingClientRect();
+    let left = rect.right + offset;
 
     if (left + previewWidth > window.innerWidth - offset) {
-        left = Math.max(offset, event.clientX - previewWidth - offset);
+        left = Math.max(offset, rect.left - previewWidth - offset);
     }
 
-    if (top + previewHeight > window.innerHeight - offset) {
-        top = Math.max(offset, event.clientY - previewHeight - offset);
-    }
+    let top = rect.top + rect.height / 2 - previewHeight / 2;
+    const maxTop = window.innerHeight - previewHeight - offset;
+    top = Math.max(offset, Math.min(top, maxTop));
 
     pageHoverPreview.style.left = `${left}px`;
     pageHoverPreview.style.top = `${top}px`;
@@ -247,7 +253,26 @@ function updatePageHoverMagnifier(event) {
     const relativeY = ((event.clientY - rect.top) / rect.height) * 100;
 
     pageHoverImage.style.transformOrigin = `${relativeX}% ${relativeY}%`;
-    pageHoverImage.style.transform = 'scale(1.65)';
+    pageHoverImage.style.transform = 'scale(1.35)';
+
+    if (pageHoverLens && pageHoverPreview) {
+        const lensSize = pageHoverLens.offsetWidth || 180;
+        const halfLens = lensSize / 2;
+        const previewRect = pageHoverPreview.getBoundingClientRect();
+        let lensLeft = (previewRect.width * (relativeX / 100)) - halfLens;
+        let lensTop = (previewRect.height * (relativeY / 100)) - halfLens;
+
+        lensLeft = Math.min(Math.max(8, lensLeft), previewRect.width - lensSize - 8);
+        lensTop = Math.min(Math.max(8, lensTop), previewRect.height - lensSize - 8);
+
+        pageHoverLens.style.left = `${lensLeft}px`;
+        pageHoverLens.style.top = `${lensTop}px`;
+        pageHoverLens.style.backgroundImage = `url(${pageHoverImage.src})`;
+        pageHoverLens.style.backgroundSize = '220%';
+        pageHoverLens.style.backgroundPosition = `${relativeX}% ${relativeY}%`;
+        pageHoverLens.classList.remove('hidden');
+        pageHoverLens.setAttribute('aria-hidden', 'false');
+    }
 }
 
 function showPageHoverPreview(page, event) {
@@ -260,7 +285,7 @@ function showPageHoverPreview(page, event) {
     pageHoverLabel.textContent = `Page ${page.page_number}`;
     pageHoverPreview.classList.remove('hidden');
     pageHoverPreview.setAttribute('aria-hidden', 'false');
-    positionPageHoverPreview(event);
+    positionPageHoverPreview(event?.currentTarget);
     updatePageHoverMagnifier(event);
 }
 
@@ -740,7 +765,7 @@ function generatePagePreviews(file) {
                 `;
                 pageThumb.addEventListener('mouseenter', (event) => showPageHoverPreview(page, event));
                 pageThumb.addEventListener('mousemove', (event) => {
-                    positionPageHoverPreview(event);
+                    positionPageHoverPreview(event.currentTarget);
                     updatePageHoverMagnifier(event);
                 });
                 pageThumb.addEventListener('mouseleave', hidePageHoverPreview);
