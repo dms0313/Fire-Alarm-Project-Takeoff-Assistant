@@ -266,7 +266,11 @@ class GeminiFireAlarmAnalyzer:
 
                 prompt_feedback = getattr(response, "prompt_feedback", None)
 
-                response_text = getattr(response, "text", None)
+                try:
+                    response_text = response.text
+                except Exception:
+                    response_text = None
+
                 if not response_text or not isinstance(response_text, str) or not response_text.strip():
                     candidate_text = self._extract_candidate_text(response)
                     if candidate_text:
