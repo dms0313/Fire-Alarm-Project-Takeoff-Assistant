@@ -44,7 +44,6 @@ class GeminiFireAlarmAnalyzer:
         self.available_models = GEMINI_MODEL_CHOICES
         self.pdf_processor = PDFProcessor()
         self.initialization_error: Optional[str] = None
-        self.request_timeout = float(os.environ.get("GEMINI_REQUEST_TIMEOUT", "60"))
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
 
         if self.api_key:
@@ -130,8 +129,7 @@ class GeminiFireAlarmAnalyzer:
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = self.model.generate_content(
-                    self._add_system_instruction(prompt),
-                    request_options={"timeout": self.request_timeout},
+                    self._add_system_instruction(prompt)
                 )
 
                 if not response:
