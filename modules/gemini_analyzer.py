@@ -321,7 +321,20 @@ class GeminiFireAlarmAnalyzer:
 
             logger.info("Gemini analysis completed successfully")
             return results
-
+        except GeminiPromptBlocked as exc:
+            logger.error("Gemini analysis blocked: %s", exc)
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self.last_prompt_feedback
+            }
+        except GeminiRequestFailed as exc:
+            logger.error("Gemini analysis failed after retries: %s", exc)
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self.last_prompt_feedback
+            }
         except Exception as e:
             logger.error(f"Error during Gemini analysis: {str(e)}", exc_info=True)
             return {
