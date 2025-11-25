@@ -397,72 +397,85 @@ class GeminiFireAlarmAnalyzer:
         )
 
     def _run_analysis_pipeline(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Execute the core Gemini analysis steps once text has been extracted."""
+            """Execute the core Gemini analysis steps once text has been extracted."""
 
-        if not pages_text:
-            return {
-                'success': False,
-                'error': 'Failed to extract text from PDF'
+            if not pages_text:
+                return {
+                    'success': False,
+                    'error': 'Failed to extract text from PDF'
+                }
+
+            # Helper to safely run a step without crashing the pipeline
+            def safe_step(func, *args, default=None):
+                try:
+                    return func(*args)
+                except (GeminiPromptBlocked, GeminiRequestFailed) as e:
+                    logger.warning(f"Step {func.__name__} failed/blocked: {e}")
+                    return default or [] if "list" in str(type(default)) else {}
+                except Exception as e:
+                    logger.error(f"Step {func.__name__} unexpected error: {e}")
+                    return default
+
+            # Step 1: Analyze cover pages for project info
+            logger.info("Analyzing cover pages...")
+            project_info = safe_step(self._analyze_cover_pages, pages_text[:5], default={})
+
+            # Step 2: Identify fire alarm relevant pages (Rule-based, rarely fails)
+            logger.info("Identifying fire alarm pages...")
+            fa_pages = self._identify_fire_alarm_pages(pages_text)
+
+            # Step 3: Extract fire-alarm-specific code requirements
+            logger.info("Extracting fire alarm codes...")
+            codes = safe_step(self._extract_code_requirements, pages_text, default={'fire_alarm_codes': []})
+
+            # Step 4: Extract fire alarm notes from electrical pages
+            logger.info("Extracting fire alarm notes...")
+            fa_notes = safe_step(self._extract_fire_alarm_notes, pages_text, fa_pages, default=[])
+
+            # Step 5: Extract mechanical fire alarm devices
+            # This is where your error occurred. Now it will just return empty lists if blocked.
+            logger.info("Extracting mechanical FA devices...")
+            mechanical_devices = safe_step(self._extract_mechanical_fa_devices, pages_text, default={'duct_detectors': [], 'dampers': []})
+
+            # Step 6: Extract specifications
+            logger.info("Extracting specifications...")
+            specifications = safe_step(self._extract_specifications, pages_text, fa_pages, default={})
+
+            # Step 7: Generate structured takeoff summary
+            logger.info("Generating structured takeoff summary...")
+            structured_summary = safe_step(self._generate_structured_takeoff, pages_text, fa_pages, default={})
+
+            high_level_overview = self._build_high_level_overview(
+                project_info, specifications, structured_summary
+            )
+            fire_alarm_briefing = self._build_fire_alarm_briefing(
+                codes,
+                specifications,
+                fa_notes,
+                structured_summary,
+            )
+
+            results = {
+                'success': True,
+                'project_info': project_info,
+                'high_level_overview': high_level_overview,
+                'fire_alarm_briefing': fire_alarm_briefing,
+                'code_requirements': codes,
+                'fire_alarm_pages': fa_pages,
+                'fire_alarm_notes': fa_notes,
+                'mechanical_devices': mechanical_devices,
+                'specifications': specifications,
+                'structured_summary': structured_summary,
+                'total_pages': len(pages_text),
+                'analysis_timestamp': datetime.now().isoformat()
             }
 
-        # Step 1: Analyze cover pages for project info
-        logger.info("Analyzing cover pages...")
-        project_info = self._analyze_cover_pages(pages_text[:5])  # First 5 pages
+            # Even if we had blocks, we return success=True so the UI shows what we DID get
+            if self.last_prompt_feedback:
+                results['prompt_feedback'] = self.last_prompt_feedback
 
-        # Step 2: Identify fire alarm relevant pages
-        logger.info("Identifying fire alarm pages...")
-        fa_pages = self._identify_fire_alarm_pages(pages_text)
-
-        # Step 3: Extract fire-alarm-specific code requirements
-        logger.info("Extracting fire alarm codes...")
-        codes = self._extract_code_requirements(pages_text)
-
-        # Step 4: Extract fire alarm notes from electrical pages
-        logger.info("Extracting fire alarm notes...")
-        fa_notes = self._extract_fire_alarm_notes(pages_text, fa_pages)
-
-        # Step 5: Extract mechanical fire alarm devices
-        logger.info("Extracting mechanical FA devices...")
-        mechanical_devices = self._extract_mechanical_fa_devices(pages_text)
-
-        # Step 6: Extract specifications
-        logger.info("Extracting specifications...")
-        specifications = self._extract_specifications(pages_text, fa_pages)
-
-        # Step 7: Generate structured takeoff summary
-        logger.info("Generating structured takeoff summary...")
-        structured_summary = self._generate_structured_takeoff(pages_text, fa_pages)
-
-        high_level_overview = self._build_high_level_overview(
-            project_info, specifications, structured_summary
-        )
-        fire_alarm_briefing = self._build_fire_alarm_briefing(
-            codes,
-            specifications,
-            fa_notes,
-            structured_summary,
-        )
-
-        results = {
-            'success': True,
-            'project_info': project_info,
-            'high_level_overview': high_level_overview,
-            'fire_alarm_briefing': fire_alarm_briefing,
-            'code_requirements': codes,
-            'fire_alarm_pages': fa_pages,
-            'fire_alarm_notes': fa_notes,
-            'mechanical_devices': mechanical_devices,
-            'specifications': specifications,
-            'structured_summary': structured_summary,
-            'total_pages': len(pages_text),
-            'analysis_timestamp': datetime.now().isoformat()
-        }
-
-        if self.last_prompt_feedback:
-            results['prompt_feedback'] = self.last_prompt_feedback
-
-        logger.info("Gemini analysis completed successfully")
-        return results
+            logger.info("Gemini analysis completed successfully (with potential partial blocks)")
+            return results
 
     def analyze_pdf_text(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Run Gemini analysis when page text has already been extracted."""
