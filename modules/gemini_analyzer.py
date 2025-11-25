@@ -11,6 +11,8 @@ import copy
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Corrected relative import for your module structure
 from .pdf_processor import PDFProcessor
@@ -95,6 +97,21 @@ class GeminiFireAlarmAnalyzer:
     def _add_system_instruction(prompt: str) -> str:
         """Prefix prompts with the system instruction for SDKs without native support."""
         return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=2, min=2, max=10),
+        retry=retry_if_exception_type(Exception)
+    )
+    def _generate_content_with_retry(self, prompt: str) -> Any:
+        """Wrapper for generate_content with retry logic and increased timeout."""
+        if not self.model:
+            raise ValueError("Gemini model not initialized")
+            
+        return self.model.generate_content(
+            prompt,
+            request_options=RequestOptions(timeout=600)
+        )
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
@@ -194,7 +211,7 @@ If information is not found, use null.
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {})
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
@@ -242,7 +259,7 @@ Return JSON with a single key fire_alarm_codes which is an array of strings. Use
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             data = self._parse_json(getattr(response, "text", ""), {})
             if isinstance(data, dict) and 'fire_alarm_codes' not in data:
                 # Backwards compatibility with older schema
@@ -295,7 +312,7 @@ Example:
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {str(e)}")
@@ -344,7 +361,7 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {'duct_detectors': [], 'dampers': []})
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
@@ -385,7 +402,7 @@ Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             return self._parse_json(getattr(response, "text", ""), {})
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
@@ -485,7 +502,7 @@ REPRESENTATIVE PROJECT TEXT:
 {combined_text}
 """
 
-            response = self.model.generate_content(self._add_system_instruction(prompt))
+            response = self._generate_content_with_retry(self._add_system_instruction(prompt))
             parsed = self._parse_json(getattr(response, "text", ""), default_summary)
 
             if not isinstance(parsed, dict):
