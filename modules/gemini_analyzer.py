@@ -257,19 +257,27 @@ class GeminiFireAlarmAnalyzer:
 
                 prompt_feedback = getattr(response, "prompt_feedback", None)
 
-                candidates = getattr(response, "candidates", None)
-                if candidates is not None and len(candidates) == 0:
-                    message = self._build_block_message(prompt_feedback)
-                    raise GeminiPromptBlocked(message, prompt_feedback)
-
                 response_text = getattr(response, "text", None)
                 if not response_text or not isinstance(response_text, str) or not response_text.strip():
                     candidate_text = self._extract_candidate_text(response)
                     if candidate_text:
                         return candidate_text
 
-                    message = self._build_block_message(prompt_feedback)
-                    raise GeminiPromptBlocked(message, prompt_feedback)
+                    if prompt_feedback and getattr(prompt_feedback, "block_reason", None) is not None:
+                        message = self._build_block_message(prompt_feedback)
+                        raise GeminiPromptBlocked(message, prompt_feedback)
+
+                    candidates = getattr(response, "candidates", None)
+                    if candidates is not None and len(candidates) == 0:
+                        logger.error("Gemini returned an empty candidates list without text.")
+                        raise GeminiRequestFailed(
+                            "Gemini returned an empty response without text or candidates."
+                        )
+
+                    logger.error("Gemini returned no text or candidates to parse.")
+                    raise GeminiRequestFailed(
+                        "Gemini returned no text or candidates to parse."
+                    )
 
                 return response_text
 
