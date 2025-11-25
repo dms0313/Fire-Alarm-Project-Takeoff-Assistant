@@ -30,6 +30,7 @@ const startGeminiBtn = document.getElementById('startGeminiBtn');
 const downloadGeminiReportBtn = document.getElementById('downloadGeminiReportBtn');
 const copyGeminiBtn = document.getElementById('copyGeminiBtn');
 const copyGeminiStatus = document.getElementById('copyGeminiStatus');
+const sendGeminiImagesCheckbox = document.getElementById('sendGeminiImages');
 const geminiProgress = document.getElementById('geminiProgress');
 const geminiProgressText = document.getElementById('geminiProgressText');
 const geminiEta = document.getElementById('geminiEta');
@@ -883,6 +884,8 @@ function startAnalysis(type) {
         currentGeminiJobId = null;
         updateGeminiReportButtonState();
         endpoint = '/api/analyze_gemini';
+        const sendGeminiImages = sendGeminiImagesCheckbox ? sendGeminiImagesCheckbox.checked : false;
+        formData.append('send_images', sendGeminiImages);
     }
 
     fetch(endpoint, {

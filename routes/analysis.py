@@ -96,7 +96,7 @@ def register_analysis_routes(app, analyzer):
         pdf_file = request.files['pdf']
         if pdf_file.filename == '':
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
-        
+
         # Get options from request
         skip_blank = request.form.get('skip_blank', 'true').lower() == 'true'
         skip_edges = request.form.get('skip_edges', 'false').lower() == 'true'
@@ -183,6 +183,8 @@ def register_analysis_routes(app, analyzer):
         pdf_file = request.files['pdf']
         if pdf_file.filename == '':
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
+
+        send_images = request.form.get('send_images', 'false').lower() == 'true'
         
         # Save uploaded file
         job_id = str(uuid.uuid4())
@@ -196,7 +198,7 @@ def register_analysis_routes(app, analyzer):
             # =================================================================
             # UPDATED CALL: Pass the pdf_path directly to the new analyzer
             # The new analyzer handles its own text extraction.
-            results = analyzer.gemini_analyzer.analyze_pdf(pdf_path)
+            results = analyzer.gemini_analyzer.analyze_pdf(pdf_path, include_images=send_images)
             results['job_id'] = job_id
             # =================================================================
             

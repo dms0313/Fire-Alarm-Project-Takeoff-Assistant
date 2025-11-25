@@ -3,6 +3,7 @@ Gemini Analyzer Module
 Handles AI-powered analysis of fire alarm specifications using Google's Gemini API
 """
 
+import io
 import logging
 import os
 import json
@@ -238,7 +239,9 @@ class GeminiFireAlarmAnalyzer:
 
         return "Gemini request was blocked: " + "; ".join(parts)
 
-    def _generate_model_text(self, prompt: str) -> Optional[str]:
+    def _generate_model_text(
+        self, prompt: str, images: Optional[List[Dict[str, Any]]] = None
+    ) -> Optional[str]:
         """Call Gemini with retries and robust empty-response handling."""
 
         if not self.model:
@@ -249,8 +252,9 @@ class GeminiFireAlarmAnalyzer:
 
         for attempt in range(1, self.max_retries + 1):
             try:
+                request_content = prompt if not images else [prompt, *images]
                 response = self.model.generate_content(
-                    prompt,
+                    request_content,
                     request_options={"timeout": 600},
                     safety_settings={
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
@@ -321,6 +325,64 @@ class GeminiFireAlarmAnalyzer:
         raise GeminiRequestFailed(
             f"Gemini request failed after {self.max_retries} attempts: {last_error}"
         )
+
+    @staticmethod
+    def _unique_page_order(page_numbers: List[int]) -> List[int]:
+        """Return ordered, de-duplicated list of page numbers"""
+
+        seen = set()
+        ordered = []
+        for page in page_numbers:
+            if page not in seen:
+                seen.add(page)
+                ordered.append(page)
+        return ordered
+
+    def _select_pages_for_image_transmission(
+        self, pages_text: List[Dict[str, Any]]
+    ) -> List[int]:
+        """Select cover, electrical/fire alarm, and mechanical pages for vision calls"""
+
+        cover_pages = [page["page_number"] for page in pages_text[:3]]
+
+        fa_pages = self._identify_fire_alarm_pages(pages_text)
+
+        electrical_keywords = [
+            "electrical", "power plan", "one-line", "single line", "distribution",
+            "panel schedule", "special systems", "fire alarm general notes",
+        ]
+        electrical_pages = [
+            page["page_number"]
+            for page in pages_text
+            if any(keyword in page["text"].lower() for keyword in electrical_keywords)
+        ]
+
+        mechanical_pages = [
+            page["page_number"]
+            for page in pages_text
+            if any(keyword in page["text"].lower() for keyword in [
+                "mechanical", "hvac", "duct", "damper", "air handler", "rtu", "ahu",
+            ])
+        ]
+
+        combined = cover_pages + electrical_pages + fa_pages + mechanical_pages
+        return self._unique_page_order(combined)
+
+    def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
+        """Render selected pages to PNG bytes for Gemini vision context"""
+
+        if not page_numbers:
+            return []
+
+        images = self.pdf_processor.pdf_to_images(pdf_path, selected_pages=page_numbers)
+        payload: List[Dict[str, Any]] = []
+
+        for image in images:
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            payload.append({"mime_type": "image/png", "data": buffer.getvalue()})
+
+        return payload
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
@@ -396,86 +458,92 @@ class GeminiFireAlarmAnalyzer:
             f"Gemini request failed after {self.max_retries} attempts: {last_error}"
         )
 
-    def _run_analysis_pipeline(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
-            """Execute the core Gemini analysis steps once text has been extracted."""
+    def _run_analysis_pipeline(
+        self, pages_text: List[Dict[str, Any]], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
+        """Execute the core Gemini analysis steps once text has been extracted."""
 
-            if not pages_text:
-                return {
-                    'success': False,
-                    'error': 'Failed to extract text from PDF'
-                }
-
-            # Helper to safely run a step without crashing the pipeline
-            def safe_step(func, *args, default=None):
-                try:
-                    return func(*args)
-                except (GeminiPromptBlocked, GeminiRequestFailed) as e:
-                    logger.warning(f"Step {func.__name__} failed/blocked: {e}")
-                    return default or [] if "list" in str(type(default)) else {}
-                except Exception as e:
-                    logger.error(f"Step {func.__name__} unexpected error: {e}")
-                    return default
-
-            # Step 1: Analyze cover pages for project info
-            logger.info("Analyzing cover pages...")
-            project_info = safe_step(self._analyze_cover_pages, pages_text[:5], default={})
-
-            # Step 2: Identify fire alarm relevant pages (Rule-based, rarely fails)
-            logger.info("Identifying fire alarm pages...")
-            fa_pages = self._identify_fire_alarm_pages(pages_text)
-
-            # Step 3: Extract fire-alarm-specific code requirements
-            logger.info("Extracting fire alarm codes...")
-            codes = safe_step(self._extract_code_requirements, pages_text, default={'fire_alarm_codes': []})
-
-            # Step 4: Extract fire alarm notes from electrical pages
-            logger.info("Extracting fire alarm notes...")
-            fa_notes = safe_step(self._extract_fire_alarm_notes, pages_text, fa_pages, default=[])
-
-            # Step 5: Extract mechanical fire alarm devices
-            # This is where your error occurred. Now it will just return empty lists if blocked.
-            logger.info("Extracting mechanical FA devices...")
-            mechanical_devices = safe_step(self._extract_mechanical_fa_devices, pages_text, default={'duct_detectors': [], 'dampers': []})
-
-            # Step 6: Extract specifications
-            logger.info("Extracting specifications...")
-            specifications = safe_step(self._extract_specifications, pages_text, fa_pages, default={})
-
-            # Step 7: Generate structured takeoff summary
-            logger.info("Generating structured takeoff summary...")
-            structured_summary = safe_step(self._generate_structured_takeoff, pages_text, fa_pages, default={})
-
-            high_level_overview = self._build_high_level_overview(
-                project_info, specifications, structured_summary
-            )
-            fire_alarm_briefing = self._build_fire_alarm_briefing(
-                codes,
-                specifications,
-                fa_notes,
-                structured_summary,
-            )
-
-            results = {
-                'success': True,
-                'project_info': project_info,
-                'high_level_overview': high_level_overview,
-                'fire_alarm_briefing': fire_alarm_briefing,
-                'code_requirements': codes,
-                'fire_alarm_pages': fa_pages,
-                'fire_alarm_notes': fa_notes,
-                'mechanical_devices': mechanical_devices,
-                'specifications': specifications,
-                'structured_summary': structured_summary,
-                'total_pages': len(pages_text),
-                'analysis_timestamp': datetime.now().isoformat()
+        if not pages_text:
+            return {
+                'success': False,
+                'error': 'Failed to extract text from PDF'
             }
 
-            # Even if we had blocks, we return success=True so the UI shows what we DID get
-            if self.last_prompt_feedback:
-                results['prompt_feedback'] = self.last_prompt_feedback
+        # Helper to safely run a step without crashing the pipeline
+        def safe_step(func, *args, default=None):
+            try:
+                return func(*args)
+            except (GeminiPromptBlocked, GeminiRequestFailed) as e:
+                logger.warning(f"Step {func.__name__} failed/blocked: {e}")
+                return default or [] if "list" in str(type(default)) else {}
+            except Exception as e:
+                logger.error(f"Step {func.__name__} unexpected error: {e}")
+                return default
 
-            logger.info("Gemini analysis completed successfully (with potential partial blocks)")
-            return results
+        # Step 1: Analyze cover pages for project info
+        logger.info("Analyzing cover pages...")
+        project_info = safe_step(self._analyze_cover_pages, pages_text[:5], image_payload, default={})
+
+        # Step 2: Identify fire alarm relevant pages (Rule-based, rarely fails)
+        logger.info("Identifying fire alarm pages...")
+        fa_pages = self._identify_fire_alarm_pages(pages_text)
+
+        # Step 3: Extract fire-alarm-specific code requirements
+        logger.info("Extracting fire alarm codes...")
+        codes = safe_step(self._extract_code_requirements, pages_text, image_payload, default={'fire_alarm_codes': []})
+
+        # Step 4: Extract fire alarm notes from electrical pages
+        logger.info("Extracting fire alarm notes...")
+        fa_notes = safe_step(self._extract_fire_alarm_notes, pages_text, fa_pages, image_payload, default=[])
+
+        # Step 5: Extract mechanical fire alarm devices
+        logger.info("Extracting mechanical FA devices...")
+        mechanical_devices = safe_step(
+            self._extract_mechanical_fa_devices,
+            pages_text,
+            image_payload,
+            default={'duct_detectors': [], 'dampers': []}
+        )
+
+        # Step 6: Extract specifications
+        logger.info("Extracting specifications...")
+        specifications = safe_step(self._extract_specifications, pages_text, fa_pages, image_payload, default={})
+
+        # Step 7: Generate structured takeoff summary
+        logger.info("Generating structured takeoff summary...")
+        structured_summary = safe_step(self._generate_structured_takeoff, pages_text, fa_pages, image_payload, default={})
+
+        high_level_overview = self._build_high_level_overview(
+            project_info, specifications, structured_summary
+        )
+        fire_alarm_briefing = self._build_fire_alarm_briefing(
+            codes,
+            specifications,
+            fa_notes,
+            structured_summary,
+        )
+
+        results = {
+            'success': True,
+            'project_info': project_info,
+            'high_level_overview': high_level_overview,
+            'fire_alarm_briefing': fire_alarm_briefing,
+            'code_requirements': codes,
+            'fire_alarm_pages': fa_pages,
+            'fire_alarm_notes': fa_notes,
+            'mechanical_devices': mechanical_devices,
+            'specifications': specifications,
+            'structured_summary': structured_summary,
+            'total_pages': len(pages_text),
+            'analysis_timestamp': datetime.now().isoformat()
+        }
+
+        # Even if we had blocks, we return success=True so the UI shows what we DID get
+        if self.last_prompt_feedback:
+            results['prompt_feedback'] = self.last_prompt_feedback
+
+        logger.info("Gemini analysis completed successfully (with potential partial blocks)")
+        return results
 
     def analyze_pdf_text(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Run Gemini analysis when page text has already been extracted."""
@@ -511,7 +579,7 @@ class GeminiFireAlarmAnalyzer:
                 'prompt_feedback': self.last_prompt_feedback
             }
 
-    def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
+    def analyze_pdf(self, pdf_path: str, include_images: bool = False) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
         """
@@ -527,7 +595,19 @@ class GeminiFireAlarmAnalyzer:
 
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
 
-            return self._run_analysis_pipeline(pages_text)
+            image_pages: List[int] = []
+            image_payload: Optional[List[Dict[str, Any]]] = None
+            if include_images:
+                image_pages = self._select_pages_for_image_transmission(pages_text)
+                image_payload = self._build_image_payload(pdf_path, image_pages)
+
+            results = self._run_analysis_pipeline(pages_text, image_payload)
+
+            if include_images:
+                results['image_pages_sent'] = image_pages
+                results['images_attached_to_gemini'] = bool(image_payload)
+
+            return results
         except GeminiPromptBlocked as exc:
             logger.error("Gemini analysis blocked: %s", exc)
             return {
@@ -550,7 +630,9 @@ class GeminiFireAlarmAnalyzer:
                 'prompt_feedback': self.last_prompt_feedback
             }
     
-    def _analyze_cover_pages(self, cover_pages: List[Dict]) -> Dict[str, Any]:
+    def _analyze_cover_pages(
+        self, cover_pages: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
         """Analyze cover pages for project information"""
         
         cover_text = "\n\n".join([p['text'] for p in cover_pages])
@@ -575,7 +657,7 @@ Extract the following information:
         """
 
         try:
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return {}
             return self._parse_json(response_text, {})
@@ -610,7 +692,9 @@ Extract the following information:
         
         return sorted(list(set(fa_pages))) # Return unique, sorted list
     
-    def _extract_code_requirements(self, pages_text: List[Dict]) -> Dict[str, List[str]]:
+    def _extract_code_requirements(
+        self, pages_text: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, List[str]]:
         """Extract fire-alarm-specific codes and standards"""
 
         code_pages = "\n\n".join([p['text'] for p in pages_text[:10]])  # Focus on front matter
@@ -629,7 +713,7 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
         """
 
         try:
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return {'fire_alarm_codes': []}
             data = self._parse_json(response_text, {})
@@ -646,7 +730,9 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
             logger.error(f"Error extracting codes: {str(e)}")
             return {'fire_alarm_codes': [], 'error': str(e)}
     
-    def _extract_fire_alarm_notes(self, pages_text: List[Dict], fa_pages: List[int]) -> List[Dict[str, str]]:
+    def _extract_fire_alarm_notes(
+        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> List[Dict[str, str]]:
         """Extract fire alarm general notes from electrical pages"""
         
         fa_text = "\n\n".join([
@@ -688,7 +774,7 @@ Example:
 """
 
         try:
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return []
             return self._parse_json(response_text, [])
@@ -700,7 +786,9 @@ Example:
             logger.error(f"Error extracting FA notes: {str(e)}")
             return []
     
-    def _extract_mechanical_fa_devices(self, pages_text: List[Dict]) -> Dict[str, List[Dict]]:
+    def _extract_mechanical_fa_devices(
+        self, pages_text: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, List[Dict]]:
         """Extract duct detectors and fire/smoke dampers from mechanical pages"""
         
         mech_pages = []
@@ -743,7 +831,7 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
 """
 
         try:
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return {'duct_detectors': [], 'dampers': []}
             return self._parse_json(response_text, {'duct_detectors': [], 'dampers': []})
@@ -755,7 +843,9 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
             logger.error(f"Error extracting mechanical devices: {str(e)}")
             return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
     
-    def _extract_specifications(self, pages_text: List[Dict], fa_pages: List[int]) -> Dict[str, Any]:
+    def _extract_specifications(
+        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
         """Extract fire alarm system specifications"""
         
         fa_text = "\n\n".join([
@@ -804,7 +894,7 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         """
 
         try:
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return {}
             return self._parse_json(response_text, {})
@@ -816,7 +906,9 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
 
-    def _generate_structured_takeoff(self, pages_text: List[Dict], fa_pages: List[int]) -> Dict[str, Any]:
+    def _generate_structured_takeoff(
+        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
         """Create a structured takeoff summary modeled after the provided example."""
 
         default_summary = {
@@ -910,7 +1002,7 @@ REPRESENTATIVE PROJECT TEXT:
 {combined_text}
 """
 
-            response_text = self._generate_model_text(prompt)
+            response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return default_summary
 
