@@ -33,6 +33,14 @@ SYSTEM_INSTRUCTIONS = (
 
 logger = logging.getLogger("fire-alarm-analyzer")
 
+
+class GeminiPromptBlocked(RuntimeError):
+    """Raised when Gemini blocks a prompt due to safety or policy filters."""
+
+    def __init__(self, message: str, prompt_feedback: Any = None):
+        super().__init__(message)
+        self.prompt_feedback = prompt_feedback
+
 class GeminiFireAlarmAnalyzer:
     """AI-powered fire alarm specification analyzer using Gemini"""
     
@@ -44,6 +52,7 @@ class GeminiFireAlarmAnalyzer:
         self.available_models = GEMINI_MODEL_CHOICES
         self.pdf_processor = PDFProcessor()
         self.initialization_error: Optional[str] = None
+        self.last_prompt_feedback: Optional[Dict[str, Any]] = None
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
 
         if self.api_key:
@@ -117,6 +126,53 @@ class GeminiFireAlarmAnalyzer:
         """Prefix prompts with the system instruction for SDKs without native support."""
         return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
 
+    @staticmethod
+    def _format_prompt_feedback(prompt_feedback: Any) -> Optional[Dict[str, Any]]:
+        """Convert Gemini prompt feedback to a JSON-serializable dict."""
+
+        if not prompt_feedback:
+            return None
+
+        formatted: Dict[str, Any] = {}
+
+        block_reason = getattr(prompt_feedback, "block_reason", None)
+        if block_reason is not None:
+            formatted["block_reason"] = str(block_reason)
+
+        safety_ratings = getattr(prompt_feedback, "safety_ratings", None)
+        if safety_ratings:
+            formatted["safety_ratings"] = [
+                {
+                    "category": str(getattr(rating, "category", "")),
+                    "probability": getattr(rating, "probability", None),
+                }
+                for rating in safety_ratings
+                if getattr(rating, "category", None) is not None
+            ]
+
+        feedback_detail = getattr(prompt_feedback, "block_reason_message", None)
+        if feedback_detail:
+            formatted["detail"] = str(feedback_detail)
+
+        return formatted or None
+
+    def _build_block_message(self, prompt_feedback: Any) -> str:
+        """Return a user-friendly message when Gemini blocks the prompt."""
+
+        formatted = self._format_prompt_feedback(prompt_feedback)
+        if not formatted:
+            return "Gemini request was blocked by safety filters."
+
+        parts = []
+        if formatted.get("block_reason"):
+            parts.append(f"block_reason={formatted['block_reason']}")
+        if formatted.get("detail"):
+            parts.append(str(formatted["detail"]))
+        if formatted.get("safety_ratings"):
+            parts.append(f"safety_ratings={formatted['safety_ratings']}")
+
+        return "Gemini request was blocked: " + "; ".join(parts)
+
     def _generate_model_text(self, prompt: str) -> Optional[str]:
         """Call Gemini with retries and robust empty-response handling."""
 
@@ -136,24 +192,27 @@ class GeminiFireAlarmAnalyzer:
                     logger.error("Gemini returned no response object.")
                     return None
 
+                prompt_feedback = getattr(response, "prompt_feedback", None)
+
                 candidates = getattr(response, "candidates", None)
                 if candidates is not None and len(candidates) == 0:
-                    logger.error(
-                        "Gemini returned no candidates. Prompt feedback: %s",
-                        getattr(response, "prompt_feedback", None),
-                    )
-                    return None
+                    message = self._build_block_message(prompt_feedback)
+                    raise GeminiPromptBlocked(message, prompt_feedback)
 
                 response_text = getattr(response, "text", None)
                 if not response_text or not isinstance(response_text, str) or not response_text.strip():
-                    logger.error(
-                        "Model response is empty or invalid. Prompt feedback: %s",
-                        getattr(response, "prompt_feedback", None),
-                    )
-                    return None
+                    message = self._build_block_message(prompt_feedback)
+                    raise GeminiPromptBlocked(message, prompt_feedback)
 
                 return response_text
 
+            except GeminiPromptBlocked as exc:
+                last_error = exc
+                self.last_prompt_feedback = self._format_prompt_feedback(
+                    getattr(exc, "prompt_feedback", None)
+                )
+                logger.error("Gemini request blocked: %s", exc)
+                break
             except Exception as exc:  # pragma: no cover - relies on remote API
                 last_error = exc
                 logger.warning(
@@ -165,7 +224,12 @@ class GeminiFireAlarmAnalyzer:
                 if attempt < self.max_retries:
                     time.sleep(1.5 * attempt)
 
-        logger.error("Gemini request failed after %s attempts: %s", self.max_retries, last_error)
+        if isinstance(last_error, GeminiPromptBlocked):
+            raise last_error
+
+        logger.error(
+            "Gemini request failed after %s attempts: %s", self.max_retries, last_error
+        )
         return None
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
@@ -177,8 +241,9 @@ class GeminiFireAlarmAnalyzer:
                 'success': False,
                 'error': 'Gemini AI not initialized. Check API key.'
             }
-        
+
         try:
+            self.last_prompt_feedback = None
             logger.info(f"Starting Gemini analysis of PDF: {pdf_path}")
             
             # Extract text from PDF using PDFProcessor
@@ -240,15 +305,19 @@ class GeminiFireAlarmAnalyzer:
                 'total_pages': len(pages_text),
                 'analysis_timestamp': datetime.now().isoformat()
             }
-            
+
+            if self.last_prompt_feedback:
+                results['prompt_feedback'] = self.last_prompt_feedback
+
             logger.info("Gemini analysis completed successfully")
             return results
-            
+
         except Exception as e:
             logger.error(f"Error during Gemini analysis: {str(e)}", exc_info=True)
             return {
                 'success': False,
-                'error': str(e)
+                'error': str(e),
+                'prompt_feedback': self.last_prompt_feedback
             }
     
     def _analyze_cover_pages(self, cover_pages: List[Dict]) -> Dict[str, Any]:
@@ -280,6 +349,8 @@ Extract the following information:
             if not response_text:
                 return {}
             return self._parse_json(response_text, {})
+        except GeminiPromptBlocked:
+            raise
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
             return {'error': str(e)}
@@ -335,6 +406,8 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
                 fire_alarm_codes = data.get('fire_alarm_standards') or []
                 return {'fire_alarm_codes': fire_alarm_codes}
             return data
+        except GeminiPromptBlocked:
+            raise
         except Exception as e:
             logger.error(f"Error extracting codes: {str(e)}")
             return {'fire_alarm_codes': [], 'error': str(e)}
@@ -385,6 +458,8 @@ Example:
             if not response_text:
                 return []
             return self._parse_json(response_text, [])
+        except GeminiPromptBlocked:
+            raise
         except Exception as e:
             logger.error(f"Error extracting FA notes: {str(e)}")
             return []
@@ -436,6 +511,8 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
             if not response_text:
                 return {'duct_detectors': [], 'dampers': []}
             return self._parse_json(response_text, {'duct_detectors': [], 'dampers': []})
+        except GeminiPromptBlocked:
+            raise
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
             return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
@@ -493,6 +570,8 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             if not response_text:
                 return {}
             return self._parse_json(response_text, {})
+        except GeminiPromptBlocked:
+            raise
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
@@ -610,6 +689,8 @@ REPRESENTATIVE PROJECT TEXT:
 
             summary['possible_pitfalls'] = parsed.get('possible_pitfalls') or []
             return summary
+        except GeminiPromptBlocked:
+            raise
         except Exception as exc:
             logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
             return default_summary
