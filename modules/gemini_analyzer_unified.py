@@ -216,7 +216,7 @@ TEXT:
         # Prioritize identified FA pages and always include general notes for context
         relevant_pages = [
             p for p in pages if not fa_pages or p.get("page_number") in fa_pages
-        ]
+        ] or pages
 
         general_note_pages = [
             p for p in pages if "general note" in p.get("text", "").lower()
@@ -225,9 +225,6 @@ TEXT:
         for p in general_note_pages:
             if p not in relevant_pages:
                 relevant_pages.append(p)
-
-        if not relevant_pages:
-            relevant_pages = pages
 
         joined = "\n\n".join(
             f"Page {p.get('page_number')}:\n{p.get('text', '')}" for p in relevant_pages
@@ -298,7 +295,12 @@ SOURCE TEXT (trimmed):
 
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {})
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("Model response is empty or not a valid string.")
+                return {}
+
+            return self._parse_json(response_text, {})
         except Exception as e:
             logger.error(f"Error extracting structured report sections: {e}")
             return {}
@@ -417,7 +419,7 @@ SOURCE TEXT (trimmed):
         )
 
         return {
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": datetime.utcnow().isoformat(),
             "total_pages": len(pages),
             "fire_alarm_pages": fa_pages,
             "project_info": cover_data,
