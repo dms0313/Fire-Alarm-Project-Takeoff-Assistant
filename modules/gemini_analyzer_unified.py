@@ -13,14 +13,85 @@ import json
 import re
 import logging
 from datetime import datetime
-from typing import List, Dict, Any
+from textwrap import dedent
+from typing import List, Dict, Any, Tuple
 
 import google.generativeai as genai
 from modules.pdf_processor import PDFProcessor
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_PROMPT_TRIM_LIMIT
 from .gemini_analyzer import SYSTEM_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
+
+REPORT_SECTIONS_SCHEMA = dedent(
+    """
+    {
+      "system_architecture": {
+        "system_type": string,
+        "panels": [{"name": string, "location": string, "page": int|null, "notes": string, "evidence": string}],
+        "network_topology": string,
+        "power_requirements": string,
+        "evidence": [string]
+      },
+      "unique_area_notes": [
+        {"area": string, "note": string, "page": int|null, "priority": string, "evidence": string}
+      ],
+      "initiation_devices": {
+        "devices": [
+          {"device_type": string, "location": string, "quantity": int, "page": int|null, "notes": string, "evidence": string}
+        ],
+        "totals": {"<device_type>": int}
+      },
+      "notification_appliances": {
+        "appliances": [
+          {"type": string, "location": string, "quantity": int, "page": int|null, "output": string, "evidence": string}
+        ],
+        "totals": {"<type>": int}
+      },
+      "interfaces_modules": {
+        "items": [
+          {"type": string, "location": string, "quantity": int, "page": int|null, "purpose": string, "evidence": string}
+        ],
+        "totals": {"<type>": int}
+      },
+      "rfis": [
+        {"question": string, "reason": string, "page": int|null, "evidence": string}
+      ],
+      "takeoff_counts": {
+        "overall_totals": {
+          "initiation": {"<device_type>": int},
+          "notification": {"<type>": int},
+          "interfaces": {"<type>": int}
+        },
+        "per_page": [
+          {"page": int, "initiation": {"<device_type>": int}, "notification": {"<type>": int}, "interfaces": {"<type>": int}, "notes": string}
+        ]
+      }
+    }
+    """
+)
+
+REPORT_SECTIONS_PROMPT_TEMPLATE = dedent(
+    """
+    Review the following construction drawing text and extract structured fire alarm details.
+    Return JSON ONLY with the exact schema below. Use concise evidence snippets or direct quotes
+    from the plans for every bullet-level item. Always review fire alarm related notes and any
+    general notes to confirm whether the plans list the manufacturer/model of any existing
+    fire alarm control panel; capture that in the panels array with clear notes and evidence.
+
+    Expected JSON shape:
+    {schema}
+
+    Rules:
+    - Return valid JSON only (no markdown or commentary).
+    - Use integers for quantities; default to 1 when not stated.
+    - Prefer pages identified as fire alarm/special systems; include page numbers when known.
+    - Evidence snippets should be short quotes that support the extracted data.
+
+    SOURCE TEXT (trimmed):
+    {trimmed_text}
+    """
+)
 
 
 class GeminiAnalyzer:
@@ -28,6 +99,7 @@ class GeminiAnalyzer:
 
     def __init__(self):
         self.model = None
+        self.prompt_trim_limit = GEMINI_PROMPT_TRIM_LIMIT
         if GEMINI_API_KEY:
             try:
                 genai.configure(api_key=GEMINI_API_KEY)
@@ -156,7 +228,12 @@ COVER PAGE TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {})
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("Cover page analysis returned an empty response.")
+                return {}
+
+            return self._parse_json(response_text, {})
         except Exception as e:
             logger.error(f"Error extracting project info: {e}")
             return {}
@@ -177,7 +254,12 @@ TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), [])
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("FA notes extraction returned an empty response.")
+                return []
+
+            return self._parse_json(response_text, [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {e}")
             return []
@@ -200,7 +282,12 @@ TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), [])
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("Mechanical devices extraction returned an empty response.")
+                return []
+
+            return self._parse_json(response_text, [])
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {e}")
             return []
@@ -229,69 +316,11 @@ TEXT:
         joined = "\n\n".join(
             f"Page {p.get('page_number')}:\n{p.get('text', '')}" for p in relevant_pages
         )
-        trimmed_text = joined[:60000]  # Protect against overly long prompts
+        trimmed_text = joined[: self.prompt_trim_limit]
 
-        prompt = f"""
-Review the following construction drawing text and extract structured fire alarm details.
-Return JSON ONLY with the exact schema below. Use concise evidence snippets or direct quotes
-from the plans for every bullet-level item. Always review fire alarm related notes and any
-general notes to confirm whether the plans list the manufacturer/model of any existing
-fire alarm control panel; capture that in the panels array with clear notes and evidence.
-
-Expected JSON shape:
-{{
-  "system_architecture": {{
-    "system_type": string,
-    "panels": [{{"name": string, "location": string, "page": int|null, "notes": string, "evidence": string}}],
-    "network_topology": string,
-    "power_requirements": string,
-    "evidence": [string]
-  }},
-  "unique_area_notes": [
-    {{"area": string, "note": string, "page": int|null, "priority": string, "evidence": string}}
-  ],
-  "initiation_devices": {{
-    "devices": [
-      {{"device_type": string, "location": string, "quantity": int, "page": int|null, "notes": string, "evidence": string}}
-    ],
-    "totals": {{"<device_type>": int}}
-  }},
-  "notification_appliances": {{
-    "appliances": [
-      {{"type": string, "location": string, "quantity": int, "page": int|null, "output": string, "evidence": string}}
-    ],
-    "totals": {{"<type>": int}}
-  }},
-  "interfaces_modules": {{
-    "items": [
-      {{"type": string, "location": string, "quantity": int, "page": int|null, "purpose": string, "evidence": string}}
-    ],
-    "totals": {{"<type>": int}}
-  }},
-  "rfis": [
-    {{"question": string, "reason": string, "page": int|null, "evidence": string}}
-  ],
-  "takeoff_counts": {{
-    "overall_totals": {{
-      "initiation": {{"<device_type>": int}},
-      "notification": {{"<type>": int}},
-      "interfaces": {{"<type>": int}}
-    }},
-    "per_page": [
-      {{"page": int, "initiation": {{"<device_type>": int}}, "notification": {{"<type>": int}}, "interfaces": {{"<type>": int}}, "notes": string}}
-    ]
-  }}
-}}
-
-Rules:
-- Return valid JSON only (no markdown or commentary).
-- Use integers for quantities; default to 1 when not stated.
-- Prefer pages identified as fire alarm/special systems; include page numbers when known.
-- Evidence snippets should be short quotes that support the extracted data.
-
-SOURCE TEXT (trimmed):
-{trimmed_text}
-"""
+        prompt = REPORT_SECTIONS_PROMPT_TEMPLATE.format(
+            schema=REPORT_SECTIONS_SCHEMA, trimmed_text=trimmed_text
+        )
 
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
@@ -305,20 +334,29 @@ SOURCE TEXT (trimmed):
             logger.error(f"Error extracting structured report sections: {e}")
             return {}
 
+    @staticmethod
+    def _normalize_item_attributes(item: Dict[str, Any]) -> Tuple[str, int, Any]:
+        """Extract normalized device type, quantity, and page data from an item."""
+
+        device_type = next(
+            (str(item.get(key)).strip() for key in ("device_type", "type", "name", "category") if item.get(key)),
+            "unspecified",
+        )
+        raw_qty = item.get("quantity") or item.get("qty") or 1
+        try:
+            quantity = int(raw_qty)
+        except (TypeError, ValueError):
+            quantity = 1
+
+        page = item.get("page") or item.get("page_number")
+        return device_type, quantity, page
+
     def _aggregate_totals(self, items: List[Dict[str, Any]], existing: Dict[str, int] | None) -> Dict[str, int]:
         """Roll up quantity totals by device type, preserving any AI-provided totals."""
 
         totals: Dict[str, int] = (existing or {}).copy()
         for item in items or []:
-            device_type = next(
-                (str(item.get(key)).strip() for key in ("device_type", "type", "name", "category") if item.get(key)),
-                "unspecified",
-            )
-            raw_qty = item.get("quantity") or item.get("qty") or 1
-            try:
-                quantity = int(raw_qty)
-            except (TypeError, ValueError):
-                quantity = 1
+            device_type, quantity, _ = self._normalize_item_attributes(item)
             totals[device_type] = totals.get(device_type, 0) + quantity
         return totals
 
@@ -348,18 +386,9 @@ SOURCE TEXT (trimmed):
 
         def _rollup(items: List[Dict[str, Any]], bucket: str) -> None:
             for item in items or []:
-                page = item.get("page") or item.get("page_number")
+                device_type, quantity, page = self._normalize_item_attributes(item)
                 if page in (None, ""):
                     continue
-                device_type = next(
-                    (str(item.get(key)).strip() for key in ("device_type", "type", "name", "category") if item.get(key)),
-                    "unspecified",
-                )
-                raw_qty = item.get("quantity") or item.get("qty") or 1
-                try:
-                    quantity = int(raw_qty)
-                except (TypeError, ValueError):
-                    quantity = 1
 
                 bucket_row = per_page_map.setdefault(
                     page, {"page": page, "initiation": {}, "notification": {}, "interfaces": {}}
