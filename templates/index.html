@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,6 +8,7 @@
     <link rel="stylesheet" href="../static/css/style.css">
     <script defer src="/static/js/main.js"></script>
 </head>
+
 <body>
     <div class="container">
         <h1>🚨 Fire Alarm PDF Analyzer</h1>
@@ -21,7 +23,8 @@
                 <div class="status-dot" id="gemini-status" aria-hidden="true"></div>
                 <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
             </div>
-            <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite"></div>
+            <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite">
+            </div>
             <div class="status-item model-selector">
                 <label for="geminiModelSelect">Gemini Model:</label>
                 <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
@@ -30,15 +33,12 @@
         </div>
 
         <section class="analysis-panel" id="analysisPanel">
-            <div class="info-banner">
-                <h3></h3>
-                <ul>
-                </ul>
-            </div>
+
 
             <div class="upload-section">
                 <div class="upload-area">
-                    <div class="drop-zone" id="dropZone" tabindex="0" role="button" aria-label="Click to select or drop PDF file">
+                    <div class="drop-zone" id="dropZone" tabindex="0" role="button"
+                        aria-label="Click to select or drop PDF file">
                         <div class="drop-zone-icon">📄</div>
                         <h2>Drop PDF here or click to browse</h2>
                         <p class="upload-help">Maximum file size: 500MB</p>
@@ -95,7 +95,8 @@
                     <div class="option-group">
                         <h3>Detection Threshold</h3>
                         <div class="slider-group">
-                            <label for="confidence">Confidence Threshold: <span class="slider-value" id="confidenceValue">0.50</span></label>
+                            <label for="confidence">Confidence Threshold: <span class="slider-value"
+                                    id="confidenceValue">0.50</span></label>
                             <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
                         </div>
                     </div>
@@ -103,7 +104,8 @@
 
                 <div class="action-row">
                     <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Selected Pages)</button>
-                    <button class="btn btn-gemini" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All Pages)</button>
+                    <button class="btn btn-gemini" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All
+                        Pages)</button>
                 </div>
                 <div class="progress-section" id="progressSection">
                     <div class="progress-visuals" aria-hidden="true">
@@ -118,21 +120,21 @@
                     </div>
                     <div class="progress-text" id="progressText">Initializing...</div>
                 </div>
-            <center>
-                <div class="results-section" id="resultsSection">
-                    <h2 class="section-title">📊 Symbol Analysis Results</h2>
-                    <div class="results-summary" id="resultsSummary"></div>
-                    <h3 class="section-title">🚨 Detected Devices</h3>
-                    <div class="devices-grid" id="devicesGrid"></div>
-                    <div class="export-section">
-                        <button class="btn export-btn" id="exportBtn">📥 Export Results (JSON)</button>
+                <center>
+                    <div class="results-section" id="resultsSection">
+                        <h2 class="section-title">📊 Symbol Analysis Results</h2>
+                        <div class="results-summary" id="resultsSummary"></div>
+                        <h3 class="section-title">🚨 Detected Devices</h3>
+                        <div class="devices-grid" id="devicesGrid"></div>
+                        <div class="export-section">
+                            <button class="btn export-btn" id="exportBtn">📥 Export Results (JSON)</button>
+                        </div>
+                        <div class="preview-section" id="previewSection">
+                            <h3>🖼️ Annotated Pages Preview</h3>
+                            <p class="section-subtitle">Click any image to view in full screen</p>
+                            <div class="preview-grid" id="previewGrid"></div>
+                        </div>
                     </div>
-                    <div class="preview-section" id="previewSection">
-                        <h3>🖼️ Annotated Pages Preview</h3>
-                        <p class="section-subtitle">Click any image to view in full screen</p>
-                        <div class="preview-grid" id="previewGrid"></div>
-                    </div>
-                </div>
             </div>
         </section>
 
@@ -141,7 +143,8 @@
                 <h2>AI Takeoff Assistant for Fire Alarm</h2>
                 <p>
                 </p>
-                <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above whenever you need a fresh summary.</p>
+                <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above
+                    whenever you need a fresh summary.</p>
                 <div class="gemini-actions">
                     <div class="gemini-action-buttons">
                         <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
@@ -151,7 +154,8 @@
                             📋 Copy All Sections
                         </button>
                     </div>
-                    <p class="gemini-helper">Available after Gemini finishes so you can share a page-referenced report.</p>
+                    <p class="gemini-helper">Available after Gemini finishes so you can share a page-referenced report.
+                    </p>
                     <p class="copy-helper hidden" id="copyGeminiStatus"></p>
                 </div>
             </div>
@@ -167,7 +171,7 @@
             <div class="gemini-results hidden" id="geminiResultsSection" aria-live="polite"></div>
         </section>
     </div>
-</center>
+    </center>
     <div class="modal" id="imageModal" role="dialog" aria-modal="true" aria-hidden="true">
         <div class="modal-content">
             <span class="modal-close" id="modalClose" role="button" aria-label="Close preview">&times;</span>
@@ -179,4 +183,5 @@
         </div>
     </div>
 </body>
+
 </html>

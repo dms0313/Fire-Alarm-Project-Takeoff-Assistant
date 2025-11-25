@@ -118,6 +118,7 @@ h1 {
     border-radius: 10px;
     margin-bottom: 20px;
     text-align: center;
+
 }
 
 .tab-container {
@@ -128,7 +129,7 @@ h1 {
 }
 
 .tab-button {
-    background: #1f1f1f;
+    background: #ed0000;
     color: #e0e0e0;
     border: 1px solid transparent;
     border-radius: 999px;
