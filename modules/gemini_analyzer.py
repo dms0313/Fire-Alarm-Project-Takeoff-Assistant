@@ -12,7 +12,7 @@ import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import google.generativeai as genai
-from google.generativeai.types import RequestOptions, HarmCategory, HarmBlockThreshold
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Corrected relative import for your module structure
@@ -251,7 +251,7 @@ class GeminiFireAlarmAnalyzer:
             try:
                 response = self.model.generate_content(
                     prompt,
-                    request_options=RequestOptions(timeout=600),
+                    request_options={"timeout": 600},
                     safety_settings={
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
