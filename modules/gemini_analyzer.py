@@ -41,6 +41,14 @@ class GeminiPromptBlocked(RuntimeError):
         super().__init__(message)
         self.prompt_feedback = prompt_feedback
 
+
+class GeminiRequestFailed(RuntimeError):
+    """Raised when Gemini consistently fails to generate a response."""
+
+    def __init__(self, message: str, prompt_feedback: Any = None):
+        super().__init__(message)
+        self.prompt_feedback = prompt_feedback
+
 class GeminiFireAlarmAnalyzer:
     """AI-powered fire alarm specification analyzer using Gemini"""
     
@@ -230,7 +238,9 @@ class GeminiFireAlarmAnalyzer:
         logger.error(
             "Gemini request failed after %s attempts: %s", self.max_retries, last_error
         )
-        return None
+        raise GeminiRequestFailed(
+            f"Gemini request failed after {self.max_retries} attempts: {last_error}"
+        )
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
@@ -351,6 +361,8 @@ Extract the following information:
             return self._parse_json(response_text, {})
         except GeminiPromptBlocked:
             raise
+        except GeminiRequestFailed:
+            raise
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
             return {'error': str(e)}
@@ -408,6 +420,8 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
             return data
         except GeminiPromptBlocked:
             raise
+        except GeminiRequestFailed:
+            raise
         except Exception as e:
             logger.error(f"Error extracting codes: {str(e)}")
             return {'fire_alarm_codes': [], 'error': str(e)}
@@ -459,6 +473,8 @@ Example:
                 return []
             return self._parse_json(response_text, [])
         except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
             raise
         except Exception as e:
             logger.error(f"Error extracting FA notes: {str(e)}")
@@ -512,6 +528,8 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
                 return {'duct_detectors': [], 'dampers': []}
             return self._parse_json(response_text, {'duct_detectors': [], 'dampers': []})
         except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
             raise
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
@@ -571,6 +589,8 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
                 return {}
             return self._parse_json(response_text, {})
         except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
             raise
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
@@ -690,6 +710,8 @@ REPRESENTATIVE PROJECT TEXT:
             summary['possible_pitfalls'] = parsed.get('possible_pitfalls') or []
             return summary
         except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
             raise
         except Exception as exc:
             logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
