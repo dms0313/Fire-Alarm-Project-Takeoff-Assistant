@@ -301,6 +301,108 @@ class GeminiFireAlarmAnalyzer:
             f"Gemini request failed after {self.max_retries} attempts: {last_error}"
         )
 
+    def _run_analysis_pipeline(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Execute the core Gemini analysis steps once text has been extracted."""
+
+        if not pages_text:
+            return {
+                'success': False,
+                'error': 'Failed to extract text from PDF'
+            }
+
+        # Step 1: Analyze cover pages for project info
+        logger.info("Analyzing cover pages...")
+        project_info = self._analyze_cover_pages(pages_text[:5])  # First 5 pages
+
+        # Step 2: Identify fire alarm relevant pages
+        logger.info("Identifying fire alarm pages...")
+        fa_pages = self._identify_fire_alarm_pages(pages_text)
+
+        # Step 3: Extract fire-alarm-specific code requirements
+        logger.info("Extracting fire alarm codes...")
+        codes = self._extract_code_requirements(pages_text)
+
+        # Step 4: Extract fire alarm notes from electrical pages
+        logger.info("Extracting fire alarm notes...")
+        fa_notes = self._extract_fire_alarm_notes(pages_text, fa_pages)
+
+        # Step 5: Extract mechanical fire alarm devices
+        logger.info("Extracting mechanical FA devices...")
+        mechanical_devices = self._extract_mechanical_fa_devices(pages_text)
+
+        # Step 6: Extract specifications
+        logger.info("Extracting specifications...")
+        specifications = self._extract_specifications(pages_text, fa_pages)
+
+        # Step 7: Generate structured takeoff summary
+        logger.info("Generating structured takeoff summary...")
+        structured_summary = self._generate_structured_takeoff(pages_text, fa_pages)
+
+        high_level_overview = self._build_high_level_overview(
+            project_info, specifications, structured_summary
+        )
+        fire_alarm_briefing = self._build_fire_alarm_briefing(
+            codes,
+            specifications,
+            fa_notes,
+            structured_summary,
+        )
+
+        results = {
+            'success': True,
+            'project_info': project_info,
+            'high_level_overview': high_level_overview,
+            'fire_alarm_briefing': fire_alarm_briefing,
+            'code_requirements': codes,
+            'fire_alarm_pages': fa_pages,
+            'fire_alarm_notes': fa_notes,
+            'mechanical_devices': mechanical_devices,
+            'specifications': specifications,
+            'structured_summary': structured_summary,
+            'total_pages': len(pages_text),
+            'analysis_timestamp': datetime.now().isoformat()
+        }
+
+        if self.last_prompt_feedback:
+            results['prompt_feedback'] = self.last_prompt_feedback
+
+        logger.info("Gemini analysis completed successfully")
+        return results
+
+    def analyze_pdf_text(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Run Gemini analysis when page text has already been extracted."""
+
+        if not self.model:
+            return {
+                'success': False,
+                'error': 'Gemini AI not initialized. Check API key.'
+            }
+
+        try:
+            self.last_prompt_feedback = None
+            return self._run_analysis_pipeline(pages_text)
+        except GeminiPromptBlocked as exc:
+            logger.error("Gemini analysis blocked: %s", exc)
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self.last_prompt_feedback
+            }
+        except GeminiRequestFailed as exc:
+            logger.error("Gemini analysis failed after retries: %s", exc)
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self.last_prompt_feedback
+            }
+        except Exception as e:
+            logger.error(f"Error during Gemini analysis: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error': str(e),
+                'prompt_feedback': self.last_prompt_feedback
+            }
+
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
@@ -314,72 +416,10 @@ class GeminiFireAlarmAnalyzer:
         try:
             self.last_prompt_feedback = None
             logger.info(f"Starting Gemini analysis of PDF: {pdf_path}")
-            
-            # Extract text from PDF using PDFProcessor
+
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
-            
-            if not pages_text:
-                return {
-                    'success': False,
-                    'error': 'Failed to extract text from PDF'
-                }
-            
-            # Step 1: Analyze cover pages for project info
-            logger.info("Analyzing cover pages...")
-            project_info = self._analyze_cover_pages(pages_text[:5])  # First 5 pages
-            
-            # Step 2: Identify fire alarm relevant pages
-            logger.info("Identifying fire alarm pages...")
-            fa_pages = self._identify_fire_alarm_pages(pages_text)
-            
-            # Step 3: Extract fire-alarm-specific code requirements
-            logger.info("Extracting fire alarm codes...")
-            codes = self._extract_code_requirements(pages_text)
-            
-            # Step 4: Extract fire alarm notes from electrical pages
-            logger.info("Extracting fire alarm notes...")
-            fa_notes = self._extract_fire_alarm_notes(pages_text, fa_pages)
-            
-            # Step 5: Extract mechanical fire alarm devices
-            logger.info("Extracting mechanical FA devices...")
-            mechanical_devices = self._extract_mechanical_fa_devices(pages_text)
 
-            # Step 6: Extract specifications
-            logger.info("Extracting specifications...")
-            specifications = self._extract_specifications(pages_text, fa_pages)
-
-            # Step 7: Generate structured takeoff summary
-            logger.info("Generating structured takeoff summary...")
-            structured_summary = self._generate_structured_takeoff(pages_text, fa_pages)
-
-            high_level_overview = self._build_high_level_overview(project_info, specifications, structured_summary)
-            fire_alarm_briefing = self._build_fire_alarm_briefing(
-                codes,
-                specifications,
-                fa_notes,
-                structured_summary,
-            )
-
-            results = {
-                'success': True,
-                'project_info': project_info,
-                'high_level_overview': high_level_overview,
-                'fire_alarm_briefing': fire_alarm_briefing,
-                'code_requirements': codes,
-                'fire_alarm_pages': fa_pages,
-                'fire_alarm_notes': fa_notes,
-                'mechanical_devices': mechanical_devices,
-                'specifications': specifications,
-                'structured_summary': structured_summary,
-                'total_pages': len(pages_text),
-                'analysis_timestamp': datetime.now().isoformat()
-            }
-
-            if self.last_prompt_feedback:
-                results['prompt_feedback'] = self.last_prompt_feedback
-
-            logger.info("Gemini analysis completed successfully")
-            return results
+            return self._run_analysis_pipeline(pages_text)
         except GeminiPromptBlocked as exc:
             logger.error("Gemini analysis blocked: %s", exc)
             return {
