@@ -135,6 +135,61 @@ class GeminiFireAlarmAnalyzer:
         return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
 
     @staticmethod
+    def _normalize_candidate_parts(candidate: Any) -> List[str]:
+        """Return a list of text parts from a Gemini candidate payload."""
+
+        parts = None
+
+        if isinstance(candidate, dict):
+            content = candidate.get("content")
+            if isinstance(content, dict):
+                parts = content.get("parts")
+            parts = parts or candidate.get("parts")
+        else:
+            content = getattr(candidate, "content", None)
+            parts = getattr(content, "parts", None) if content else getattr(candidate, "parts", None)
+
+        if not parts:
+            return []
+
+        normalized: List[str] = []
+        for part in parts:
+            text_value = None
+            if isinstance(part, str):
+                text_value = part
+            elif isinstance(part, dict):
+                text_value = part.get("text")
+            else:
+                text_value = getattr(part, "text", None)
+
+            if text_value and isinstance(text_value, str) and text_value.strip():
+                normalized.append(text_value.strip())
+
+        return normalized
+
+    @classmethod
+    def _extract_candidate_text(cls, response: Any) -> Optional[str]:
+        """Extract the first non-empty text from Gemini response candidates."""
+
+        candidates = getattr(response, "candidates", None)
+        if not candidates:
+            return None
+
+        for candidate in candidates:
+            # Some SDKs expose text directly on the candidate
+            direct_text = getattr(candidate, "text", None)
+            if not direct_text and isinstance(candidate, dict):
+                direct_text = candidate.get("text")
+            if direct_text and isinstance(direct_text, str) and direct_text.strip():
+                return direct_text.strip()
+
+            for part_text in cls._normalize_candidate_parts(candidate):
+                if part_text.strip():
+                    return part_text.strip()
+
+        return None
+
+    @staticmethod
     def _format_prompt_feedback(prompt_feedback: Any) -> Optional[Dict[str, Any]]:
         """Convert Gemini prompt feedback to a JSON-serializable dict."""
 
@@ -209,6 +264,10 @@ class GeminiFireAlarmAnalyzer:
 
                 response_text = getattr(response, "text", None)
                 if not response_text or not isinstance(response_text, str) or not response_text.strip():
+                    candidate_text = self._extract_candidate_text(response)
+                    if candidate_text:
+                        return candidate_text
+
                     message = self._build_block_message(prompt_feedback)
                     raise GeminiPromptBlocked(message, prompt_feedback)
 
