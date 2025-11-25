@@ -228,7 +228,12 @@ COVER PAGE TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {})
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("Cover page analysis returned an empty response.")
+                return {}
+
+            return self._parse_json(response_text, {})
         except Exception as e:
             logger.error(f"Error extracting project info: {e}")
             return {}
@@ -249,7 +254,12 @@ TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), [])
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("FA notes extraction returned an empty response.")
+                return []
+
+            return self._parse_json(response_text, [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {e}")
             return []
@@ -272,7 +282,12 @@ TEXT:
 """
         try:
             response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), [])
+            response_text = getattr(response, "text", "")
+            if not isinstance(response_text, str) or not response_text.strip():
+                logger.error("Mechanical devices extraction returned an empty response.")
+                return []
+
+            return self._parse_json(response_text, [])
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {e}")
             return []
