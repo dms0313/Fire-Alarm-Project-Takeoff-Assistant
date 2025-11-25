@@ -348,7 +348,7 @@ class GeminiFireAlarmAnalyzer:
         fa_pages = self._identify_fire_alarm_pages(pages_text)
 
         electrical_keywords = [
-            "electrical", "power plan", "one-line", "single line", "distribution",
+            "electrical", "power plan", "distribution", "lighting plan", "lighting schedule
             "panel schedule", "special systems", "fire alarm general notes",
         ]
         electrical_pages = [
@@ -361,7 +361,8 @@ class GeminiFireAlarmAnalyzer:
             page["page_number"]
             for page in pages_text
             if any(keyword in page["text"].lower() for keyword in [
-                "mechanical", "hvac", "duct", "damper", "air handler", "rtu", "ahu",
+                "mechanical", "hvac", "duct", "damper", "air handler", "rtu", "ahu", "fsd", "duct smoke",
+                "ventilation", "vent", "ventilation schedule", "ventilation plan", "ventilation general notes"
             ])
         ]
 
@@ -650,9 +651,9 @@ Extract the following information:
 4. FIRE ALARM REQUIRED: State "Yes", "No", or "Unknown" based on the documents
 5. SPRINKLER STATUS: Indicate if the building is sprinkled and if FA must monitor it
 6. SCOPE SUMMARY: Brief summary of the overall project scope
-7. PROJECT NUMBER: Any project reference numbers
+7. VOICE REQUIRED: State "Yes", "No", or "Unknown" based on the documents
 
-        Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, project_number.
+        Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, voice_required.
         If information is not found, use null.
         """
 
@@ -679,7 +680,7 @@ Extract the following information:
             'fire alarm control', 'facp', 'control panel', 'annunciator',
             'special systems', 'power plan', 'electrical plan',
             'life safety plan', 'fire alarm general notes', 'fire alarm riser',
-            'special systems plan', 'fire protection plan'
+            'special systems plan', 'fire protection plan', 'fa', 'nfpa', 'ann'
         ]
         
         for page in pages_text:
@@ -766,7 +767,7 @@ DO NOT extract:
 
 Format as JSON array with objects containing:
 - page: page number
-- note_type: (e.g., "System Requirement", "Device Specification", "Installation Note")
+- note_type: (e.g., "System Requirement", "Device Specification", "Installation Note", "Keyed Notes")
 - content: the actual note text
 
 Example:
@@ -795,7 +796,7 @@ Example:
         for page in pages_text:
             page_lower = page['text'].lower()
             if any(keyword in page_lower for keyword in [
-                'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu'
+                'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu', "fsd", "smoke damper", "fire damper", "fire smoke damper"
             ]):
                 mech_pages.append(page)
         
