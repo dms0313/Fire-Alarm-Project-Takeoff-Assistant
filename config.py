@@ -36,6 +36,25 @@ def _ensure_absolute(path: Path, base: Path) -> Path:
     return (base / expanded).resolve()
 
 
+def _int_from_env(var_name: str, default: int) -> int:
+    """Return an integer environment value or a default when parsing fails."""
+
+    raw_value = os.environ.get(var_name)
+    if raw_value is None:
+        return default
+
+    try:
+        return int(raw_value)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Invalid integer for %s: %s. Using default %s.",
+            var_name,
+            raw_value,
+            default,
+        )
+        return default
+
+
 def _iter_env_candidates(env_path: str, cwd: Path) -> Iterable[Path]:
     """Yield candidate paths derived from the LOCAL_MODEL_PATH environment value."""
 
@@ -128,6 +147,7 @@ OVERLAP_PERCENT = 0.25
 DEFAULT_CONFIDENCE = 0.40
 MAX_WORKERS = 4
 MAX_CACHE_SIZE = 1000
+GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 60000)
 
 # =============================================================================
 # FLASK SETTINGS
