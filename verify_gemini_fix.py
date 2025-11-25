@@ -24,26 +24,30 @@ def verify_fix():
 
     print("✅ Gemini Analyzer initialized.")
     
-    # Check if _generate_content_with_retry exists
-    if hasattr(analyzer, '_generate_content_with_retry'):
-        print("✅ _generate_content_with_retry method found.")
+    # Check if _generate_model_text exists
+    if hasattr(analyzer, '_generate_model_text'):
+        print("✅ _generate_model_text method found.")
     else:
-        print("❌ _generate_content_with_retry method NOT found.")
+        print("❌ _generate_model_text method NOT found.")
         return
 
     # Try a simple generation
     try:
-        print("Testing API call with retry wrapper and safety settings...")
+        print("Testing API call with _generate_model_text and safety settings...")
         # Inspect the method to ensure safety_settings are used (static analysis check)
         import inspect
-        source = inspect.getsource(analyzer._generate_content_with_retry)
+        source = inspect.getsource(analyzer._generate_model_text)
         if "safety_settings" in source and "HarmBlockThreshold.BLOCK_NONE" in source:
              print("✅ Safety settings configuration found in source code.")
         else:
              print("❌ Safety settings configuration NOT found in source code.")
 
-        response = analyzer._generate_content_with_retry("Hello, are you working?")
-        print(f"✅ API Call Successful. Response: {response.text[:50]}...")
+        response_text = analyzer._generate_model_text("Hello, are you working?")
+        if response_text:
+            print(f"✅ API Call Successful. Response: {response_text[:50]}...")
+        else:
+            print("❌ API Call Failed: Returned None or empty string.")
+            
     except Exception as e:
         print(f"❌ API Call Failed: {e}")
 

@@ -241,27 +241,81 @@ class GeminiFireAlarmAnalyzer:
     def _generate_model_text(self, prompt: str) -> Optional[str]:
         """Call Gemini with retries and robust empty-response handling."""
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=2, min=2, max=10),
-        retry=retry_if_exception_type(Exception)
-    )
-    def _generate_content_with_retry(self, prompt: str) -> Any:
-        """Wrapper for generate_content with retry logic and increased timeout."""
         if not self.model:
-            raise ValueError("Gemini model not initialized")
-            
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
+            logger.error("Gemini model is not initialized.")
+            return None
 
-        return self.model.generate_content(
-            prompt,
-            request_options=RequestOptions(timeout=600),
-            safety_settings=safety_settings
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self.model.generate_content(
+                    prompt,
+                    request_options=RequestOptions(timeout=600),
+                    safety_settings={
+                        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    }
+                )
+
+                if not response:
+                    logger.error("Gemini returned no response object.")
+                    return None
+
+                prompt_feedback = getattr(response, "prompt_feedback", None)
+
+                response_text = getattr(response, "text", None)
+                if not response_text or not isinstance(response_text, str) or not response_text.strip():
+                    candidate_text = self._extract_candidate_text(response)
+                    if candidate_text:
+                        return candidate_text
+
+                    if prompt_feedback and getattr(prompt_feedback, "block_reason", None) is not None:
+                        message = self._build_block_message(prompt_feedback)
+                        raise GeminiPromptBlocked(message, prompt_feedback)
+
+                    candidates = getattr(response, "candidates", None)
+                    if candidates is not None and len(candidates) == 0:
+                        logger.error("Gemini returned an empty candidates list without text.")
+                        raise GeminiRequestFailed(
+                            "Gemini returned an empty response without text or candidates."
+                        )
+
+                    logger.error("Gemini returned no text or candidates to parse.")
+                    raise GeminiRequestFailed(
+                        "Gemini returned no text or candidates to parse."
+                    )
+
+                return response_text
+
+            except GeminiPromptBlocked as exc:
+                last_error = exc
+                self.last_prompt_feedback = self._format_prompt_feedback(
+                    getattr(exc, "prompt_feedback", None)
+                )
+                logger.error("Gemini request blocked: %s", exc)
+                break
+            except Exception as exc:  # pragma: no cover - relies on remote API
+                last_error = exc
+                logger.warning(
+                    "Gemini request failed (attempt %s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    exc,
+                )
+                if attempt < self.max_retries:
+                    time.sleep(1.5 * attempt)
+
+        if isinstance(last_error, GeminiPromptBlocked):
+            raise last_error
+
+        logger.error(
+            "Gemini request failed after %s attempts: %s", self.max_retries, last_error
+        )
+        raise GeminiRequestFailed(
+            f"Gemini request failed after {self.max_retries} attempts: {last_error}"
         )
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
