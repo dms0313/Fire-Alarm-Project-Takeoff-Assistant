@@ -33,7 +33,15 @@ def verify_fix():
 
     # Try a simple generation
     try:
-        print("Testing API call with retry wrapper...")
+        print("Testing API call with retry wrapper and safety settings...")
+        # Inspect the method to ensure safety_settings are used (static analysis check)
+        import inspect
+        source = inspect.getsource(analyzer._generate_content_with_retry)
+        if "safety_settings" in source and "HarmBlockThreshold.BLOCK_NONE" in source:
+             print("✅ Safety settings configuration found in source code.")
+        else:
+             print("❌ Safety settings configuration NOT found in source code.")
+
         response = analyzer._generate_content_with_retry("Hello, are you working?")
         print(f"✅ API Call Successful. Response: {response.text[:50]}...")
     except Exception as e:
