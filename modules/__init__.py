@@ -50,11 +50,3 @@ except ImportError as exc:  # pragma: no cover - optional dependency
 else:
     __all__.append("RoboflowDetector")
 
-try:
-    from .gemini_analyzer_unified import GeminiAnalyzer as UnifiedGeminiAnalyzer
-except ImportError as exc:  # pragma: no cover - optional dependency
-    logger.warning("Unified Gemini analyzer unavailable: %s", exc)
-    UnifiedGeminiAnalyzer = None
-else:
-    __all__.append("UnifiedGeminiAnalyzer")
-

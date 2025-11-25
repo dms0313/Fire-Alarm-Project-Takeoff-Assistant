@@ -88,6 +88,14 @@ let geminiCardIdCounts = {};
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
+const GEMINI_STATUS_STEPS = [
+    { threshold: 18, message: 'Extracting text from every page for Gemini...' },
+    { threshold: 38, message: 'Reviewing cover sheets for project details...' },
+    { threshold: 58, message: 'Scanning fire alarm and special systems pages...' },
+    { threshold: 78, message: 'Pulling specs, notes, and mechanical devices...' },
+    { threshold: 96, message: 'Building structured takeoff and RFIs...' },
+    { threshold: 101, message: 'Finalizing Gemini deliverables...' },
+];
 
 // Initialisation
 DocumentReady(() => {
@@ -563,6 +571,7 @@ function startGeminiProgress(statusText = 'Analyzing fire alarm scope with Gemin
     }
 
     geminiProgressStartTime = Date.now();
+    updateGeminiProgress(statusText);
     geminiProgressInterval = setInterval(() => updateGeminiProgress(), 1000);
 }
 
@@ -571,13 +580,17 @@ function updateGeminiProgress(statusText) {
         return;
     }
 
-    if (statusText) {
-        geminiProgressText.textContent = statusText;
-    }
+    const elapsedSeconds = (Date.now() - geminiProgressStartTime) / 1000;
+    const estimatedSeconds = ESTIMATED_GEMINI_DURATION_SECONDS || 90;
+    const percent = Math.min(98, Math.max(5, Math.floor((elapsedSeconds / estimatedSeconds) * 98)));
+
+    const autoStatus = GEMINI_STATUS_STEPS.find((step) => percent < step.threshold)
+        || GEMINI_STATUS_STEPS[GEMINI_STATUS_STEPS.length - 1];
+    const activeStatus = statusText || autoStatus.message;
+
+    geminiProgressText.textContent = `${percent}% • ${activeStatus}`;
 
     if (geminiEta) {
-        const elapsedSeconds = (Date.now() - geminiProgressStartTime) / 1000;
-        const estimatedSeconds = ESTIMATED_GEMINI_DURATION_SECONDS || 90;
         const remainingSeconds = Math.max(0, Math.ceil(estimatedSeconds - elapsedSeconds));
         geminiEta.textContent = `${remainingSeconds}s remaining (estimated)`;
     }
