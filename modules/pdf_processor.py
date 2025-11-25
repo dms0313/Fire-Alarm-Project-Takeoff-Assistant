@@ -7,6 +7,12 @@ import fitz  # PyMuPDF
 from PIL import Image
 import numpy as np
 
+from .agent_fix_text_encoding import (
+    looks_corrupted,
+    repair_binary_escapes,
+    sanitize_text_for_gemini,
+)
+
 from config import DPI, TILE_SIZE, OVERLAP_PERCENT
 
 logger = logging.getLogger(__name__)
@@ -35,9 +41,19 @@ class PDFProcessor:
 
             pages = []
             for i, page in enumerate(doc, start=1):
+                raw_text = page.get_text()
+                if not isinstance(raw_text, str):
+                    raw_text = str(raw_text)
+
+                # Repair obviously corrupted binary escapes before further cleaning
+                if looks_corrupted(raw_text):
+                    raw_text = repair_binary_escapes(raw_text)
+
+                cleaned_text = sanitize_text_for_gemini(raw_text)
+
                 pages.append({
                     "page_number": i,
-                    "text": page.get_text()
+                    "text": cleaned_text
                 })
             doc.close()
             return pages
