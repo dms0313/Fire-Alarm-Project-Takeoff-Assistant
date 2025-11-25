@@ -8,6 +8,7 @@ import os
 import json
 import re
 import copy
+import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import google.generativeai as genai
@@ -43,6 +44,8 @@ class GeminiFireAlarmAnalyzer:
         self.available_models = GEMINI_MODEL_CHOICES
         self.pdf_processor = PDFProcessor()
         self.initialization_error: Optional[str] = None
+        self.request_timeout = float(os.environ.get("GEMINI_REQUEST_TIMEOUT", "60"))
+        self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
 
         if self.api_key:
             self._initialize_model(self.current_model)
@@ -114,6 +117,58 @@ class GeminiFireAlarmAnalyzer:
     def _add_system_instruction(prompt: str) -> str:
         """Prefix prompts with the system instruction for SDKs without native support."""
         return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
+
+    def _generate_model_text(self, prompt: str) -> Optional[str]:
+        """Call Gemini with retries and robust empty-response handling."""
+
+        if not self.model:
+            logger.error("Gemini model is not initialized.")
+            return None
+
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self.model.generate_content(
+                    self._add_system_instruction(prompt),
+                    request_options={"timeout": self.request_timeout},
+                )
+
+                if not response:
+                    logger.error("Gemini returned no response object.")
+                    return None
+
+                candidates = getattr(response, "candidates", None)
+                if candidates is not None and len(candidates) == 0:
+                    logger.error(
+                        "Gemini returned no candidates. Prompt feedback: %s",
+                        getattr(response, "prompt_feedback", None),
+                    )
+                    return None
+
+                response_text = getattr(response, "text", None)
+                if not response_text or not isinstance(response_text, str) or not response_text.strip():
+                    logger.error(
+                        "Model response is empty or invalid. Prompt feedback: %s",
+                        getattr(response, "prompt_feedback", None),
+                    )
+                    return None
+
+                return response_text
+
+            except Exception as exc:  # pragma: no cover - relies on remote API
+                last_error = exc
+                logger.warning(
+                    "Gemini request failed (attempt %s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    exc,
+                )
+                if attempt < self.max_retries:
+                    time.sleep(1.5 * attempt)
+
+        logger.error("Gemini request failed after %s attempts: %s", self.max_retries, last_error)
+        return None
 
     def analyze_pdf(self, pdf_path: str) -> Dict[str, Any]:
         """
@@ -218,13 +273,15 @@ Extract the following information:
 6. SCOPE SUMMARY: Brief summary of the overall project scope
 7. PROJECT NUMBER: Any project reference numbers
 
-Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, project_number.
-If information is not found, use null.
-"""
+        Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, project_number.
+        If information is not found, use null.
+        """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {})
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return {}
+            return self._parse_json(response_text, {})
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
             return {'error': str(e)}
@@ -267,12 +324,14 @@ Extract a concise list of the exact editions referenced for:
 
 Do NOT list general building, electrical, mechanical, or plumbing codes unless they directly govern the fire alarm scope.
 
-Return JSON with a single key fire_alarm_codes which is an array of strings. Use an empty array if nothing is found.
-"""
+        Return JSON with a single key fire_alarm_codes which is an array of strings. Use an empty array if nothing is found.
+        """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            data = self._parse_json(getattr(response, "text", ""), {})
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return {'fire_alarm_codes': []}
+            data = self._parse_json(response_text, {})
             if isinstance(data, dict) and 'fire_alarm_codes' not in data:
                 # Backwards compatibility with older schema
                 fire_alarm_codes = data.get('fire_alarm_standards') or []
@@ -324,8 +383,10 @@ Example:
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), [])
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return []
+            return self._parse_json(response_text, [])
         except Exception as e:
             logger.error(f"Error extracting FA notes: {str(e)}")
             return []
@@ -373,8 +434,10 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
 """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {'duct_detectors': [], 'dampers': []})
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return {'duct_detectors': [], 'dampers': []}
+            return self._parse_json(response_text, {'duct_detectors': [], 'dampers': []})
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
             return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
@@ -424,12 +487,14 @@ Extract:
     manufacturer and model number from any fire alarm notes or general notes. Return null if nothing is referenced.
 
 Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM.
-Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
-"""
+        Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
+        """
 
         try:
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            return self._parse_json(getattr(response, "text", ""), {})
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return {}
+            return self._parse_json(response_text, {})
         except Exception as e:
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
@@ -528,8 +593,11 @@ REPRESENTATIVE PROJECT TEXT:
 {combined_text}
 """
 
-            response = self.model.generate_content(self._add_system_instruction(prompt))
-            parsed = self._parse_json(getattr(response, "text", ""), default_summary)
+            response_text = self._generate_model_text(prompt)
+            if not response_text:
+                return default_summary
+
+            parsed = self._parse_json(response_text, default_summary)
 
             if not isinstance(parsed, dict):
                 return default_summary
