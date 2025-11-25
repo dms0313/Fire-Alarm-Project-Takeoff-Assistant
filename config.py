@@ -142,12 +142,12 @@ GEMINI_MODEL_CHOICES = [
 # PROCESSING SETTINGS
 # =============================================================================
 TILE_SIZE = 1024
-DPI = 350
+DPI = 96
 OVERLAP_PERCENT = 0.25
-DEFAULT_CONFIDENCE = 0.40
+DEFAULT_CONFIDENCE = 0.55
 MAX_WORKERS = 4
 MAX_CACHE_SIZE = 1000
-GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 60000)
+GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 10000)
 
 # =============================================================================
 # FLASK SETTINGS
