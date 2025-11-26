@@ -223,15 +223,22 @@ class PDFProcessor:
         # If the page is smaller than the configured tile size, fall back to a
         # single tile that covers the whole page. Previously we would generate
         # zero tiles, causing the analyzer to finish instantly with no results.
-        if img_width < tile_size or img_height < tile_size:
-            adjusted_tile_size = min(tile_size, img_width, img_height)
+        if img_width <= tile_size or img_height <= tile_size:
+            # The page is smaller than the tile size, so treat the whole page as a single tile.
+            # This is a critical fix for a bug where small pages would produce zero tiles,
+            # causing the analysis to silently fail with no results.
+
+            # The tile's image is the full page image.
+            tile_image = image.crop((0, 0, img_width, img_height))
+
+            # The tile's dimensions match the page's dimensions.
             tiles.append({
                 'id': 0,
-                'image': image.crop((0, 0, img_width, img_height)),
+                'image': tile_image,
                 'x': 0,
                 'y': 0,
-                'width': adjusted_tile_size,
-                'height': adjusted_tile_size,
+                'width': img_width,
+                'height': img_height,
                 'complexity': self.calculate_tile_complexity(image) if prioritize_complex else 0
             })
 
