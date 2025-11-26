@@ -219,6 +219,31 @@ class PDFProcessor:
         """
         tiles = []
         img_width, img_height = image.size
+
+        # If the page is smaller than the configured tile size, fall back to a
+        # single tile that covers the whole page. Previously we would generate
+        # zero tiles, causing the analyzer to finish instantly with no results.
+        if img_width < tile_size or img_height < tile_size:
+            adjusted_tile_size = min(tile_size, img_width, img_height)
+            tiles.append({
+                'id': 0,
+                'image': image.crop((0, 0, img_width, img_height)),
+                'x': 0,
+                'y': 0,
+                'width': adjusted_tile_size,
+                'height': adjusted_tile_size,
+                'complexity': self.calculate_tile_complexity(image) if prioritize_complex else 0
+            })
+
+            stats = {
+                'total_created': 1,
+                'blank_filtered': 0,
+                'edge_filtered': 0,
+                'kept': 1
+            }
+
+            return tiles, stats
+
         stride = int(tile_size * (1 - overlap))
         
         stats = {
