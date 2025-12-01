@@ -392,13 +392,6 @@ def register_analysis_routes(app, analyzer):
         })
 
 
-def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
-                                  use_parallel, use_cache, confidence, selected_pages=None):
-    """Run local model analysis on PDF"""
-    if not analyzer.local_detector:
-        return {'success': False, 'error': 'Local detector not initialized'}
-
-
 def _extract_project_name(results: dict, fallback_name: str | None = None) -> str | None:
     """Derive a project name using Gemini output, falling back to filename."""
 
@@ -417,26 +410,33 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
             return candidate
 
     return fallback_name
-    
+
+
+def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
+                                  use_parallel, use_cache, confidence, selected_pages=None):
+    """Run local model analysis on PDF"""
+    if not analyzer.local_detector:
+        return {'success': False, 'error': 'Local detector not initialized'}
+
     try:
         # Convert PDF to images
         images = analyzer.pdf_processor.pdf_to_images(pdf_path, selected_pages)
         if not images:
             return {'success': False, 'error': 'Failed to convert PDF'}
-        
+
         logger.info(f"Converted {len(images)} pages")
-        
+
         # Analyze each page
         page_analyses = []
         total_devices = []
-        
+
         # Use the correct page numbers if a selection was made
         page_numbers_to_process = selected_pages if selected_pages else range(1, len(images) + 1)
 
         for i, image in enumerate(images):
-            page_num = page_numbers_to_process[i] # Get the original page number
+            page_num = page_numbers_to_process[i]  # Get the original page number
             logger.info(f"Processing page {page_num} ({i+1}/{len(images)} selected)")
-            
+
             # Create tiles
             tiles, tile_stats = analyzer.pdf_processor.create_tiles(
                 image,
@@ -446,9 +446,9 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                 skip_edges=skip_edges,
                 prioritize_complex=True
             )
-            
+
             logger.info(f"Page {page_num} - Created {tile_stats['kept']} tiles")
-            
+
             if not tiles:
                 page_analyses.append(PageAnalysis(
                     page_number=page_num,
@@ -459,7 +459,7 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                     specifications=[]
                 ).to_dict())
                 continue
-            
+
             # Run detection
             if use_parallel:
                 detections, proc_stats = analyzer.local_detector.process_all_tiles_parallel(
@@ -469,14 +469,14 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                 detections, proc_stats = analyzer.local_detector.process_all_tiles_sequential(
                     tiles, confidence, use_cache
                 )
-            
+
             logger.info(f"Page {page_num} - Found {len(detections)} raw detections")
-            
+
             # Remove overlaps
             filtered_detections = analyzer.visualizer.remove_overlapping_detections(detections)
-            
+
             logger.info(f"Page {page_num} - {len(filtered_detections)} unique detections after NMS")
-            
+
             # Convert to FireAlarmDevice objects
             devices = []
             for det in filtered_detections:
@@ -492,7 +492,7 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                 )
                 devices.append(device)
                 total_devices.append(device)
-            
+
             # Create page analysis
             page_analysis = PageAnalysis(
                 page_number=page_num,
@@ -502,9 +502,9 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                 keyed_notes=[],
                 specifications=[]
             )
-            
+
             page_analyses.append(page_analysis.to_dict())
-        
+
         # Compile results
         results = {
             'success': True,
@@ -524,9 +524,9 @@ def _extract_project_name(results: dict, fallback_name: str | None = None) -> st
                 }
             }
         }
-        
+
         return results
-        
+
     except Exception as e:
         logger.error(f"Error in local model analysis: {str(e)}", exc_info=True)
         return {'success': False, 'error': str(e)}
