@@ -37,6 +37,9 @@ const geminiEta = document.getElementById('geminiEta');
 const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
 const geminiModelSelect = document.getElementById('geminiModelSelect');
+const geminiPanel = document.getElementById('geminiPanel');
+const historyList = document.getElementById('historyList');
+const historyStatus = document.getElementById('historyStatus');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -107,6 +110,7 @@ DocumentReady(() => {
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
+    refreshHistoryList();
 });
 
 function DocumentReady(callback) {
@@ -922,10 +926,15 @@ function startAnalysis(type) {
         });
 }
 
-function displayDetectionResults(data) {
+function displayDetectionResults(data, options = {}) {
+    const { fromHistory = false } = options;
     currentJobId = data.job_id || null;
 
-    finishProgressAnimation('Analysis complete!');
+    if (!fromHistory) {
+        finishProgressAnimation('Analysis complete!');
+    } else if (progressSection) {
+        progressSection.classList.add('hidden');
+    }
 
     if (!resultsSection) {
         return;
@@ -997,6 +1006,10 @@ function displayDetectionResults(data) {
         exportBtn.onclick = () => {
             window.location.href = `/api/export/${data.job_id}`;
         };
+    }
+
+    if (!fromHistory) {
+        refreshHistoryList();
     }
 }
 
@@ -1189,12 +1202,15 @@ function formatConfidenceSummary(group) {
     return toPercent(avgConfidence);
 }
 
-function displayGeminiResults(data) {
+function displayGeminiResults(data, options = {}) {
+    const { fromHistory = false } = options;
     if (!geminiResultsSection || !geminiProgress) {
         return;
     }
 
-    stopGeminiProgress('Gemini analysis complete');
+    if (!fromHistory) {
+        stopGeminiProgress('Gemini analysis complete');
+    }
     geminiProgress.classList.add('hidden');
     geminiResultsSection.classList.remove('hidden');
     geminiResultsSection.innerHTML = '';
@@ -1212,7 +1228,7 @@ function displayGeminiResults(data) {
         copyGeminiBtn.disabled = false;
         copyGeminiBtn.title = 'Copy the AI sections to your clipboard';
     }
-    setCopyStatus('Ready to copy the Gemini summary and sections.');
+    setCopyStatus(fromHistory ? 'Loaded from history.' : 'Ready to copy the Gemini summary and sections.');
 
     const {
         project_info: projectInfo = {},
@@ -1258,6 +1274,10 @@ function displayGeminiResults(data) {
     const tableOfContents = buildGeminiTableOfContents();
     if (tableOfContents) {
         geminiResultsSection.prepend(tableOfContents);
+    }
+
+    if (!fromHistory) {
+        refreshHistoryList();
     }
 }
 
@@ -2595,6 +2615,139 @@ async function viewPage(jobId, pageNum) {
         console.error('Error viewing page:', error);
         alert('Error viewing page. Please try again.');
     }
+}
+
+// History management
+async function refreshHistoryList() {
+    if (!historyList) {
+        return;
+    }
+
+    setHistoryStatus('Loading recent projects...');
+    historyList.innerHTML = '';
+
+    try {
+        const response = await fetch('/api/history');
+        const payload = await response.json();
+        if (!payload.success) {
+            throw new Error(payload.error || 'Failed to load history');
+        }
+
+        renderHistoryEntries(payload.entries || []);
+    } catch (error) {
+        setHistoryStatus(error.message || 'Unable to load history', true);
+    }
+}
+
+function setHistoryStatus(message, isError = false) {
+    if (!historyStatus) return;
+    historyStatus.textContent = message || '';
+    historyStatus.classList.toggle('error', Boolean(isError));
+}
+
+function renderHistoryEntries(entries = []) {
+    if (!historyList) {
+        return;
+    }
+
+    historyList.innerHTML = '';
+
+    if (!entries.length) {
+        const emptyState = document.createElement('div');
+        emptyState.className = 'history-subtle';
+        emptyState.textContent = 'No analyses saved yet. Run a local or Gemini scan to build your project history.';
+        historyList.appendChild(emptyState);
+        setHistoryStatus('');
+        return;
+    }
+
+    entries.forEach((entry) => {
+        const card = buildHistoryCard(entry);
+        if (card) {
+            historyList.appendChild(card);
+        }
+    });
+
+    setHistoryStatus(`Showing ${entries.length} saved ${entries.length === 1 ? 'project' : 'projects'}.`);
+}
+
+function buildHistoryCard(entry) {
+    const card = document.createElement('div');
+    card.className = 'history-card';
+
+    const title = document.createElement('h4');
+    title.textContent = entry.project_name || entry.original_filename || 'Untitled Project';
+    card.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'history-meta';
+    const type = document.createElement('span');
+    type.className = `history-type ${entry.analysis_type === 'local' ? 'local' : ''}`;
+    type.textContent = entry.analysis_type === 'gemini' ? 'Gemini' : 'Local';
+    meta.appendChild(type);
+
+    if (entry.timestamp) {
+        const time = document.createElement('span');
+        time.textContent = formatTimestamp(entry.timestamp);
+        meta.appendChild(time);
+    }
+
+    card.appendChild(meta);
+
+    if (entry.original_filename) {
+        const filename = document.createElement('div');
+        filename.className = 'history-subtle';
+        filename.textContent = entry.original_filename;
+        card.appendChild(filename);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'history-actions';
+    const openBtn = document.createElement('button');
+    openBtn.className = entry.analysis_type === 'gemini' ? 'btn btn-gemini' : 'btn';
+    openBtn.textContent = 'Open';
+    openBtn.onclick = () => loadHistoryEntry(entry.job_id, entry.analysis_type);
+    actions.appendChild(openBtn);
+
+    card.appendChild(actions);
+    return card;
+}
+
+async function loadHistoryEntry(jobId, analysisType) {
+    if (!jobId) return;
+
+    setHistoryStatus('Loading saved results...');
+    try {
+        const response = await fetch(`/api/history/${jobId}`);
+        const payload = await response.json();
+        if (!payload.success) {
+            throw new Error(payload.error || 'Unable to load saved results');
+        }
+
+        const resultData = payload.data || {};
+        const type = payload.analysis_type || analysisType;
+
+        if (type === 'gemini') {
+            displayGeminiResults(resultData, { fromHistory: true });
+            geminiPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+            displayDetectionResults(resultData, { fromHistory: true });
+            resultsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        setHistoryStatus(`Loaded ${payload.project_name || 'saved project'}.`);
+    } catch (error) {
+        console.error('History load error', error);
+        setHistoryStatus(error.message || 'Unable to load saved results', true);
+    }
+}
+
+function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) {
+        return timestamp;
+    }
+    return date.toLocaleString();
 }
 
 function setButtonLoadingState(button, isLoading, loadingText = 'Preparing PDF...') {
