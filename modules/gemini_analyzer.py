@@ -12,8 +12,10 @@ import copy
 import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Corrected relative import for your module structure
@@ -418,7 +420,7 @@ class GeminiFireAlarmAnalyzer:
         return [page["page_number"] for page in pages_text]
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
-        """Render selected pages to JPEG bytes for Gemini vision context"""
+        """Render selected pages to downscaled JPEG bytes for Gemini vision context."""
 
         if not page_numbers:
             return []
@@ -429,8 +431,19 @@ class GeminiFireAlarmAnalyzer:
 
         for image, page_number in zip(images, page_numbers):
             try:
+                # Downscale to reduce upload size and speed up transmission.
+                max_dimension = 1400
+                image = image.convert("RGB")
+                image.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
+
                 buffer = io.BytesIO()
-                image.save(buffer, format="JPEG", quality=85, optimize=True)
+                image.save(
+                    buffer,
+                    format="JPEG",
+                    quality=80,
+                    optimize=True,
+                    progressive=True,
+                )
                 jpeg_bytes = buffer.getvalue()
                 total_bytes += len(jpeg_bytes)
                 payload.append({"inline_data": {"mime_type": "image/jpeg", "data": jpeg_bytes}})
@@ -445,14 +458,6 @@ class GeminiFireAlarmAnalyzer:
                 "Prepared %s JPEG images for Gemini (%0.2f MB)",
                 len(payload),
                 total_bytes / 1_000_000,
-            )
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            payload.append(
-                {
-                    "inline_data": {"mime_type": "image/png", "data": buffer.getvalue()},
-                    "alt_text": f"Page {page_number}",
-                }
             )
 
         return payload
