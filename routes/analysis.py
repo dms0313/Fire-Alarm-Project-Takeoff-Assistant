@@ -17,12 +17,14 @@ from flask import request, jsonify, send_file, render_template_string
 import config
 from models import FireAlarmDevice, PageAnalysis
 from modules.gemini_report_builder import build_gemini_report
+from modules.history_store import HistoryStore
 
 logger = logging.getLogger(__name__)
 
 # Storage for analysis jobs
 analysis_jobs = {}
 analysis_lock = threading.Lock()
+history_store = HistoryStore()
 
 
 def register_analysis_routes(app, analyzer):
@@ -124,7 +126,7 @@ def register_analysis_routes(app, analyzer):
         
         try:
             logger.info(f"Starting analysis job {job_id}")
-            
+
             # Run analysis
             results = _run_local_detection_analysis(
                 analyzer,
@@ -136,10 +138,10 @@ def register_analysis_routes(app, analyzer):
                 confidence,
                 selected_pages
             )
-            
+
             if selected_pages:
                 results['selected_pages'] = selected_pages
-            
+
             # Store results
             with analysis_lock:
                 analysis_jobs[job_id] = {
@@ -148,9 +150,9 @@ def register_analysis_routes(app, analyzer):
                     'temp_dir': temp_dir,
                     'timestamp': datetime.now().isoformat()
                 }
-            
+
             logger.info(f"Analysis job {job_id} completed")
-            
+
             response_data = {
                 'success': True,
                 'job_id': job_id,
@@ -159,9 +161,18 @@ def register_analysis_routes(app, analyzer):
                 'total_pages': len(results.get('page_analyses', [])),
                 'page_analyses': results.get('page_analyses', [])
             }
-            
+
+            history_store.save_entry(
+                job_id,
+                analysis_type='local',
+                original_filename=pdf_file.filename,
+                results=response_data,
+                pdf_path=pdf_path,
+                project_name=None,
+            )
+
             return jsonify(response_data)
-            
+
         except Exception as e:
             logger.error(f"Error in analysis: {str(e)}", exc_info=True)
             # Cleanup on error
@@ -201,7 +212,9 @@ def register_analysis_routes(app, analyzer):
             results = analyzer.gemini_analyzer.analyze_pdf(pdf_path, include_images=send_images)
             results['job_id'] = job_id
             # =================================================================
-            
+
+            project_name = _extract_project_name(results, pdf_file.filename)
+
             # Store results
             with analysis_lock:
                 analysis_jobs[job_id] = {
@@ -211,12 +224,21 @@ def register_analysis_routes(app, analyzer):
                     'timestamp': datetime.now().isoformat(),
                     'analysis_type': 'gemini'
                 }
-            
+
+            history_store.save_entry(
+                job_id,
+                analysis_type='gemini',
+                original_filename=pdf_file.filename,
+                results=results,
+                pdf_path=pdf_path,
+                project_name=project_name,
+            )
+
             logger.info(f"Gemini analysis {job_id} completed")
-            
+
             # The 'results' object from analyze_pdf already contains 'success'
             return jsonify(results)
-            
+
         except Exception as e:
             logger.error(f"Error in Gemini analysis: {str(e)}", exc_info=True)
             if os.path.exists(pdf_path):
@@ -328,12 +350,73 @@ def register_analysis_routes(app, analyzer):
             download_name=filename
         )
 
+    @app.route("/api/history", methods=["GET"])
+    def list_history():
+        """Return metadata for all stored analyses."""
+
+        entries = history_store.list_entries()
+        return jsonify({
+            'success': True,
+            'entries': entries
+        })
+
+    @app.route("/api/history/<job_id>", methods=["GET"])
+    def load_history(job_id):
+        """Load stored results for a previous analysis run."""
+
+        entry = history_store.load_entry(job_id)
+        if not entry:
+            return jsonify({'success': False, 'error': 'History entry not found'}), 404
+
+        # Rehydrate in-memory job cache so preview/export endpoints continue to work
+        with analysis_lock:
+            if job_id not in analysis_jobs:
+                analysis_jobs[job_id] = {
+                    'results': entry['results'],
+                    'pdf_path': entry['pdf_path'],
+                    'temp_dir': entry['storage_dir'],
+                    'timestamp': entry.get('timestamp'),
+                    'analysis_type': entry.get('analysis_type'),
+                }
+
+        payload = {**entry['results']}
+        payload['job_id'] = job_id
+
+        return jsonify({
+            'success': True,
+            'analysis_type': entry.get('analysis_type'),
+            'project_name': entry.get('project_name'),
+            'original_filename': entry.get('original_filename'),
+            'timestamp': entry.get('timestamp'),
+            'data': payload,
+        })
+
 
 def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
                                   use_parallel, use_cache, confidence, selected_pages=None):
     """Run local model analysis on PDF"""
     if not analyzer.local_detector:
         return {'success': False, 'error': 'Local detector not initialized'}
+
+
+def _extract_project_name(results: dict, fallback_name: str | None = None) -> str | None:
+    """Derive a project name using Gemini output, falling back to filename."""
+
+    if not isinstance(results, dict):
+        return fallback_name
+
+    high_level = results.get('high_level_overview') or {}
+    project_info = results.get('project_info') or {}
+
+    for candidate in (
+        high_level.get('project_name'),
+        project_info.get('project_name'),
+        project_info.get('name'),
+    ):
+        if candidate:
+            return candidate
+
+    return fallback_name
     
     try:
         # Convert PDF to images
