@@ -364,55 +364,9 @@ class GeminiFireAlarmAnalyzer:
     def _select_pages_for_image_transmission(
         self, pages_text: List[Dict[str, Any]]
     ) -> List[int]:
-        """Pick a small, relevant set of pages to send as images."""
+        """Send all pages as images so Gemini can read drawings directly."""
 
-        if not pages_text:
-            return []
-
-        cover_pages = [page["page_number"] for page in pages_text[:3]]
-
-        fa_keywords = [
-            "fire alarm",
-            "fa",
-            "special systems",
-            "power plan",
-            "electrical plan",
-            "life safety",
-            "horn strobe",
-            "speaker strobe",
-            "pull station",
-            "annunciator",
-            "f.a.",
-        ]
-
-        mechanical_keywords = [
-            "mechanical",
-            "duct detector",
-            "smoke damper",
-            "fire smoke damper",
-            "ahu",
-            "air handling",
-            "vav",
-        ]
-
-        fa_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in fa_keywords)
-        ]
-
-        mech_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in mechanical_keywords)
-        ]
-
-        ordered_unique = self._unique_page_order([*cover_pages, *fa_pages, *mech_pages])
-
-        # Cap the number of images to avoid oversized Gemini requests
-        limited_pages = ordered_unique[:12]
-        logger.info("Attaching %s page images to Gemini: %s", len(limited_pages), limited_pages)
-        return limited_pages
+        return [page["page_number"] for page in pages_text]
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
         """Render selected pages to PNG bytes for Gemini vision context"""
