@@ -195,7 +195,7 @@ def register_analysis_routes(app, analyzer):
         if pdf_file.filename == '':
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
 
-        send_images = request.form.get('send_images', 'false').lower() == 'true'
+        send_images = request.form.get('send_images', 'true').lower() == 'true'
         
         # Save uploaded file
         job_id = str(uuid.uuid4())
