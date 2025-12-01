@@ -139,6 +139,17 @@ def register_analysis_routes(app, analyzer):
                 selected_pages
             )
 
+            if not results.get('success', False):
+                error_message = results.get('error', 'Local detector failed to run')
+                logger.error("Local analysis failed: %s", error_message)
+
+                if os.path.exists(pdf_path):
+                    os.remove(pdf_path)
+                if os.path.exists(temp_dir):
+                    os.rmdir(temp_dir)
+
+                return jsonify({'success': False, 'error': error_message}), 400
+
             if selected_pages:
                 results['selected_pages'] = selected_pages
 
