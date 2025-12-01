@@ -373,51 +373,67 @@ class GeminiFireAlarmAnalyzer:
 
         cover_pages = [page["page_number"] for page in pages_text[:3]]
 
-        fa_keywords = [
+        fire_alarm_section_pages = self._find_fire_alarm_section_pages(pages_text)
+
+        ordered_unique = self._unique_page_order([
+            *cover_pages,
+            *fire_alarm_section_pages,
+        ])
+
+        logger.info(
+            "Attaching %s page images to Gemini (cover + fire alarm sections): %s",
+            len(ordered_unique),
+            ordered_unique,
+        )
+        return ordered_unique
+
+    def _find_fire_alarm_section_pages(
+        self, pages_text: List[Dict[str, Any]]
+    ) -> List[int]:
+        """Locate pages that belong to the fire alarm section for image transmission."""
+
+        if not pages_text:
+            return []
+
+        fire_alarm_keywords = [
             "fire alarm",
-            "fa",
-            "special systems",
-            "power plan",
-            "electrical plan",
-            "life safety",
+            "fire-alarm",
+            "fire alarm riser",
+            "fire alarm notes",
+            "fire alarm general notes",
+            "notification device",
             "horn strobe",
             "speaker strobe",
             "pull station",
             "annunciator",
-            "f.a.",
         ]
 
-        mechanical_keywords = [
-            "mechanical",
-            "duct detector",
-            "smoke damper",
-            "fire smoke damper",
-            "ahu",
-            "air handling",
-            "vav",
+        electrical_section_keywords = [
+            "electrical",
+            "power plan",
+            "special systems",
+            "one-line",
+            "riser diagram",
         ]
 
-        fa_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in fa_keywords)
-        ]
+        candidate_pages: List[int] = []
 
-        mech_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in mechanical_keywords)
-        ]
+        for page in pages_text:
+            page_text = page.get("text", "")
+            page_number = page.get("page_number")
+            if not page_text or page_number is None:
+                continue
 
-        ordered_unique = self._unique_page_order([*cover_pages, *fa_pages, *mech_pages])
+            text_lower = page_text.lower()
 
-        # Cap the number of images to avoid oversized Gemini requests
-        limited_pages = ordered_unique[:12]
-        logger.info("Attaching %s page images to Gemini: %s", len(limited_pages), limited_pages)
-        return limited_pages
-        """Send all pages as images so Gemini can read drawings directly."""
+            has_fire_alarm_terms = any(keyword in text_lower for keyword in fire_alarm_keywords)
+            has_section_context = any(keyword in text_lower for keyword in electrical_section_keywords)
+            has_fa_sheet_id = bool(re.search(r"\bfa[-\s]?\d{1,3}\b", text_lower))
 
-        return [page["page_number"] for page in pages_text]
+            if has_fire_alarm_terms or (has_section_context and has_fa_sheet_id):
+                candidate_pages.append(page_number)
+
+        return self._unique_page_order(candidate_pages)
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
         """Render selected pages to downscaled JPEG bytes for Gemini vision context."""
