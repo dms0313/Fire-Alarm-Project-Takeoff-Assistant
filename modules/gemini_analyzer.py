@@ -448,6 +448,7 @@ class GeminiFireAlarmAnalyzer:
                 "Prepared %s JPEG images for Gemini (%0.2f MB)",
                 len(payload),
                 total_bytes / 1_000_000,
+            )
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             payload.append(
