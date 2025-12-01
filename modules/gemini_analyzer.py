@@ -433,14 +433,11 @@ class GeminiFireAlarmAnalyzer:
                 image.save(buffer, format="JPEG", quality=85, optimize=True)
                 jpeg_bytes = buffer.getvalue()
                 total_bytes += len(jpeg_bytes)
-                payload.append(
-                    {
-                        "inline_data": {"mime_type": "image/jpeg", "data": jpeg_bytes},
-                        "alt_text": f"Page {page_number}",
-                    }
-                )
+                payload.append({"inline_data": {"mime_type": "image/jpeg", "data": jpeg_bytes}})
             except Exception as exc:
-                logger.warning("Skipping image for page %s due to render error: %s", page_number, exc)
+                logger.warning(
+                    "Skipping image for page %s due to render error: %s", page_number, exc
+                )
                 continue
 
         if payload:
@@ -448,13 +445,6 @@ class GeminiFireAlarmAnalyzer:
                 "Prepared %s JPEG images for Gemini (%0.2f MB)",
                 len(payload),
                 total_bytes / 1_000_000,
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
-            payload.append(
-                {
-                    "inline_data": {"mime_type": "image/png", "data": buffer.getvalue()},
-                    "alt_text": f"Page {page_number}",
-                }
             )
 
         return payload
