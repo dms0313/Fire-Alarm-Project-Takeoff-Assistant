@@ -185,10 +185,17 @@ def register_preview_routes(app, analyzer):
             annotated_image = image.copy()
             annotated_image = annotated_image.convert("RGB")
             draw = ImageDraw.Draw(annotated_image)
-            try:
-                # Try to load a slightly larger font if possible
-                font = ImageFont.truetype("arial.ttf", 12)
-            except IOError:
+            legend_scale = 3
+            font_size = 12 * legend_scale
+            font = None
+            for font_path in ("arial.ttf", "DejaVuSans.ttf"):
+                try:
+                    font = ImageFont.truetype(font_path, font_size)
+                    break
+                except IOError:
+                    continue
+
+            if font is None:
                 font = ImageFont.load_default()
 
             render_dpi = 180
@@ -251,10 +258,11 @@ def register_preview_routes(app, analyzer):
                 legend_entries.append((color, label))
 
             if legend_entries:
-                swatch_size = 16
-                text_spacing = 8
-                row_spacing = 6
-                padding = 10
+                swatch_size = 16 * legend_scale
+                text_spacing = 8 * legend_scale
+                row_spacing = 6 * legend_scale
+                padding = 10 * legend_scale
+                margin = 20
 
                 legend_width = 0
                 legend_height = 0
@@ -272,8 +280,8 @@ def register_preview_routes(app, analyzer):
 
                 legend_height = legend_height - row_spacing if legend_entries else 0
 
-                legend_x = annotated_image.width - legend_width - (padding * 2) - 20
-                legend_y = 20
+                legend_x = margin + padding
+                legend_y = annotated_image.height - legend_height - (padding * 2) - margin
 
                 bg_x1 = legend_x - padding
                 bg_y1 = legend_y - padding
