@@ -364,20 +364,90 @@ class GeminiFireAlarmAnalyzer:
     def _select_pages_for_image_transmission(
         self, pages_text: List[Dict[str, Any]]
     ) -> List[int]:
+        """Pick a small, relevant set of pages to send as images."""
+
+        if not pages_text:
+            return []
+
+        cover_pages = [page["page_number"] for page in pages_text[:3]]
+
+        fa_keywords = [
+            "fire alarm",
+            "fa",
+            "special systems",
+            "power plan",
+            "electrical plan",
+            "life safety",
+            "horn strobe",
+            "speaker strobe",
+            "pull station",
+            "annunciator",
+            "f.a.",
+        ]
+
+        mechanical_keywords = [
+            "mechanical",
+            "duct detector",
+            "smoke damper",
+            "fire smoke damper",
+            "ahu",
+            "air handling",
+            "vav",
+        ]
+
+        fa_pages = [
+            page["page_number"]
+            for page in pages_text
+            if any(keyword in page["text"].lower() for keyword in fa_keywords)
+        ]
+
+        mech_pages = [
+            page["page_number"]
+            for page in pages_text
+            if any(keyword in page["text"].lower() for keyword in mechanical_keywords)
+        ]
+
+        ordered_unique = self._unique_page_order([*cover_pages, *fa_pages, *mech_pages])
+
+        # Cap the number of images to avoid oversized Gemini requests
+        limited_pages = ordered_unique[:12]
+        logger.info("Attaching %s page images to Gemini: %s", len(limited_pages), limited_pages)
+        return limited_pages
         """Send all pages as images so Gemini can read drawings directly."""
 
         return [page["page_number"] for page in pages_text]
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
-        """Render selected pages to PNG bytes for Gemini vision context"""
+        """Render selected pages to JPEG bytes for Gemini vision context"""
 
         if not page_numbers:
             return []
 
         images = self.pdf_processor.pdf_to_images(pdf_path, selected_pages=page_numbers)
         payload: List[Dict[str, Any]] = []
+        total_bytes = 0
 
         for image, page_number in zip(images, page_numbers):
+            try:
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=85, optimize=True)
+                jpeg_bytes = buffer.getvalue()
+                total_bytes += len(jpeg_bytes)
+                payload.append(
+                    {
+                        "inline_data": {"mime_type": "image/jpeg", "data": jpeg_bytes},
+                        "alt_text": f"Page {page_number}",
+                    }
+                )
+            except Exception as exc:
+                logger.warning("Skipping image for page %s due to render error: %s", page_number, exc)
+                continue
+
+        if payload:
+            logger.info(
+                "Prepared %s JPEG images for Gemini (%0.2f MB)",
+                len(payload),
+                total_bytes / 1_000_000,
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             payload.append(
@@ -635,15 +705,23 @@ class GeminiFireAlarmAnalyzer:
 
             image_pages: List[int] = []
             image_payload: Optional[List[Dict[str, Any]]] = None
+            image_error: Optional[str] = None
             if include_images:
                 image_pages = self._select_pages_for_image_transmission(pages_text)
-                image_payload = self._build_image_payload(pdf_path, image_pages)
+                try:
+                    image_payload = self._build_image_payload(pdf_path, image_pages)
+                except Exception as exc:  # pragma: no cover - defensive guard for heavy PDFs
+                    image_error = f"Failed to render images for Gemini: {exc}"
+                    logger.error(image_error, exc_info=True)
+                    image_payload = None
 
             results = self._run_analysis_pipeline(pages_text, image_payload, image_pages)
 
             if include_images:
                 results['image_pages_sent'] = image_pages
                 results['images_attached_to_gemini'] = bool(image_payload)
+                if image_error:
+                    results['image_error'] = image_error
 
             return results
         except GeminiPromptBlocked as exc:
