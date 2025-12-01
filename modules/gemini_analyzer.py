@@ -446,6 +446,14 @@ class GeminiFireAlarmAnalyzer:
                 len(payload),
                 total_bytes / 1_000_000,
             )
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            payload.append(
+                {
+                    "inline_data": {"mime_type": "image/png", "data": buffer.getvalue()},
+                    "alt_text": f"Page {page_number}",
+                }
+            )
 
         return payload
 
