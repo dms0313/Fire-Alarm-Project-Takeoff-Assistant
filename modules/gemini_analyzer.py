@@ -413,6 +413,9 @@ class GeminiFireAlarmAnalyzer:
         limited_pages = ordered_unique[:12]
         logger.info("Attaching %s page images to Gemini: %s", len(limited_pages), limited_pages)
         return limited_pages
+        """Send all pages as images so Gemini can read drawings directly."""
+
+        return [page["page_number"] for page in pages_text]
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
         """Render selected pages to JPEG bytes for Gemini vision context"""
@@ -445,6 +448,13 @@ class GeminiFireAlarmAnalyzer:
                 "Prepared %s JPEG images for Gemini (%0.2f MB)",
                 len(payload),
                 total_bytes / 1_000_000,
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            payload.append(
+                {
+                    "inline_data": {"mime_type": "image/png", "data": buffer.getvalue()},
+                    "alt_text": f"Page {page_number}",
+                }
             )
 
         return payload
