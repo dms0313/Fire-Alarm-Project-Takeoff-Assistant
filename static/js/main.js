@@ -40,6 +40,7 @@ const geminiModelSelect = document.getElementById('geminiModelSelect');
 const geminiPanel = document.getElementById('geminiPanel');
 const historyList = document.getElementById('historyList');
 const historyStatus = document.getElementById('historyStatus');
+const historyToggle = document.getElementById('historyToggle');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -89,6 +90,7 @@ let availableGeminiModels = [];
 let latestGeminiResults = null;
 let pageSelectionCollapsed = true;
 let geminiCardIdCounts = {};
+let historyCollapsed = true;
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -107,6 +109,7 @@ DocumentReady(() => {
     setupControls();
     setupModelSelector();
     setPageSelectionCollapsed(true);
+    setHistoryCollapsed(true);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -180,6 +183,10 @@ function setupUploadInteractions() {
 
     if (pageSelectionToggle) {
         pageSelectionToggle.addEventListener('click', () => setPageSelectionCollapsed(!pageSelectionCollapsed));
+    }
+
+    if (historyToggle) {
+        historyToggle.addEventListener('click', () => setHistoryCollapsed(!historyCollapsed));
     }
 }
 
@@ -2639,10 +2646,90 @@ async function refreshHistoryList() {
     }
 }
 
+function setHistoryCollapsed(collapsed) {
+    historyCollapsed = collapsed;
+
+    if (historyList) {
+        historyList.classList.toggle('collapsed', collapsed);
+    }
+
+    if (historyToggle) {
+        historyToggle.textContent = collapsed ? 'Show History' : 'Hide History';
+        historyToggle.setAttribute('aria-expanded', (!collapsed).toString());
+    }
+}
+
 function setHistoryStatus(message, isError = false) {
     if (!historyStatus) return;
     historyStatus.textContent = message || '';
     historyStatus.classList.toggle('error', Boolean(isError));
+}
+
+function handleEditProjectTitle(entry) {
+    if (!entry?.job_id) {
+        return;
+    }
+
+    const currentTitle = entry.project_name || entry.original_filename || 'Untitled Project';
+    const newTitle = prompt('Edit project title', currentTitle);
+
+    if (newTitle === null) {
+        return;
+    }
+
+    const trimmed = newTitle.trim();
+    if (!trimmed) {
+        setHistoryStatus('Project title cannot be empty.', true);
+        return;
+    }
+
+    updateHistoryTitle(entry.job_id, trimmed);
+}
+
+async function updateHistoryTitle(jobId, projectName) {
+    try {
+        const response = await fetch(`/api/history/${jobId}/title`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_name: projectName }),
+        });
+
+        const payload = await response.json();
+        if (!payload.success) {
+            throw new Error(payload.error || 'Failed to update project title');
+        }
+
+        setHistoryStatus('Project title updated.');
+        refreshHistoryList();
+    } catch (error) {
+        setHistoryStatus(error.message || 'Unable to update project title', true);
+    }
+}
+
+function handleDeleteHistory(jobId) {
+    if (!jobId) return;
+
+    const confirmed = window.confirm('Delete this saved project? This cannot be undone.');
+    if (!confirmed) return;
+
+    deleteHistoryEntry(jobId);
+}
+
+async function deleteHistoryEntry(jobId) {
+    setHistoryStatus('Removing project...');
+    try {
+        const response = await fetch(`/api/history/${jobId}`, { method: 'DELETE' });
+        const payload = await response.json();
+
+        if (!payload.success) {
+            throw new Error(payload.error || 'Failed to delete project');
+        }
+
+        setHistoryStatus('Project removed.');
+        refreshHistoryList();
+    } catch (error) {
+        setHistoryStatus(error.message || 'Unable to delete project', true);
+    }
 }
 
 function renderHistoryEntries(entries = []) {
@@ -2674,6 +2761,22 @@ function renderHistoryEntries(entries = []) {
 function buildHistoryCard(entry) {
     const card = document.createElement('div');
     card.className = 'history-card';
+
+    const preview = document.createElement('div');
+    preview.className = 'history-preview';
+    const previewImg = document.createElement('img');
+    previewImg.loading = 'lazy';
+    previewImg.src = `/api/history/${entry.job_id}/preview`;
+    previewImg.alt = `Preview image for ${entry.project_name || entry.original_filename || 'project'}`;
+    previewImg.onerror = () => {
+        previewImg.remove();
+        const fallback = document.createElement('div');
+        fallback.className = 'history-preview-fallback';
+        fallback.textContent = 'Preview unavailable';
+        preview.appendChild(fallback);
+    };
+    preview.appendChild(previewImg);
+    card.appendChild(preview);
 
     const title = document.createElement('h4');
     title.textContent = entry.project_name || entry.original_filename || 'Untitled Project';
@@ -2708,6 +2811,18 @@ function buildHistoryCard(entry) {
     openBtn.textContent = 'Open';
     openBtn.onclick = () => loadHistoryEntry(entry.job_id, entry.analysis_type);
     actions.appendChild(openBtn);
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'btn btn-secondary';
+    editBtn.textContent = 'Edit Title';
+    editBtn.onclick = () => handleEditProjectTitle(entry);
+    actions.appendChild(editBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn btn-danger';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.onclick = () => handleDeleteHistory(entry.job_id);
+    actions.appendChild(deleteBtn);
 
     card.appendChild(actions);
     return card;

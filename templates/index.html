@@ -38,9 +38,14 @@
                     <h2 class="section-title">📁 Project History</h2>
                     <p class="section-subtitle">Quickly reopen recent documents and Gemini takeoffs.</p>
                 </div>
-                <div class="history-status" id="historyStatus"></div>
+                <div class="history-actions-inline">
+                    <button type="button" class="collapse-toggle" id="historyToggle" aria-expanded="false">
+                        Show History
+                    </button>
+                    <div class="history-status" id="historyStatus"></div>
+                </div>
             </div>
-            <div class="history-list" id="historyList" role="list">
+            <div class="history-list collapsed" id="historyList" role="list">
             </div>
         </section>
 
