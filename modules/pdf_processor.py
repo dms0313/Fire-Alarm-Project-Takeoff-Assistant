@@ -365,5 +365,23 @@ class PDFProcessor:
         # Sort by complexity if prioritization enabled
         if prioritize_complex and tiles:
             tiles.sort(key=lambda t: t['complexity'], reverse=True)
-        
+
+        # If all tiles were filtered out (e.g., blank/edge filtering too strict),
+        # fall back to a single tile that covers the full page so detection still
+        # runs and surfaces useful warnings instead of silently returning 0.
+        if not tiles:
+            logger.warning(
+                "No tiles created after filtering; using full-page fallback tile"
+            )
+            tiles = [{
+                'id': 0,
+                'image': image,
+                'x': 0,
+                'y': 0,
+                'width': img_width,
+                'height': img_height,
+                'complexity': self.calculate_tile_complexity(image) if prioritize_complex else 0
+            }]
+            stats['kept'] = 1
+
         return tiles, stats
