@@ -338,36 +338,35 @@ class GeminiFireAlarmAnalyzer:
                 ordered.append(page)
         return ordered
 
+    @staticmethod
+    def _image_guidance_text(
+        image_payload: Optional[List[Dict[str, Any]]],
+        image_pages: Optional[List[int]] = None,
+    ) -> str:
+        """Describe attached images so prompts instruct Gemini to use drawings."""
+
+        if not image_payload:
+            return ""
+
+        if image_pages:
+            mapped_pages = ", ".join(f"Page {page}" for page in image_pages)
+            return (
+                "\n\nIMAGE CONTEXT: The referenced PDF pages are attached as rendered "
+                f"PNG images ({mapped_pages}). Rely on the drawings in these images instead "
+                "of any OCR text when extracting details."
+            )
+
+        return (
+            "\n\nIMAGE CONTEXT: PDF pages are attached as rendered PNG images. "
+            "Use the drawings directly rather than relying on OCR text."
+        )
+
     def _select_pages_for_image_transmission(
         self, pages_text: List[Dict[str, Any]]
     ) -> List[int]:
-        """Select cover, electrical/fire alarm, and mechanical pages for vision calls"""
+        """Send all pages as images so Gemini can read drawings directly."""
 
-        cover_pages = [page["page_number"] for page in pages_text[:3]]
-
-        fa_pages = self._identify_fire_alarm_pages(pages_text)
-
-        electrical_keywords = [
-            "electrical", "power plan", "distribution", "lighting plan", "lighting schedule",
-            "panel schedule", "special systems", "fire alarm general notes",
-        ]
-        electrical_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in electrical_keywords)
-        ]
-
-        mechanical_pages = [
-            page["page_number"]
-            for page in pages_text
-            if any(keyword in page["text"].lower() for keyword in [
-                "mechanical", "hvac", "duct", "damper", "air handler", "rtu", "ahu", "fsd", "duct smoke",
-                "ventilation", "vent", "ventilation schedule", "ventilation plan", "ventilation general notes"
-            ])
-        ]
-
-        combined = cover_pages + electrical_pages + fa_pages + mechanical_pages
-        return self._unique_page_order(combined)
+        return [page["page_number"] for page in pages_text]
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
         """Render selected pages to PNG bytes for Gemini vision context"""
@@ -378,10 +377,15 @@ class GeminiFireAlarmAnalyzer:
         images = self.pdf_processor.pdf_to_images(pdf_path, selected_pages=page_numbers)
         payload: List[Dict[str, Any]] = []
 
-        for image in images:
+        for image, page_number in zip(images, page_numbers):
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
-            payload.append({"mime_type": "image/png", "data": buffer.getvalue()})
+            payload.append(
+                {
+                    "inline_data": {"mime_type": "image/png", "data": buffer.getvalue()},
+                    "alt_text": f"Page {page_number}",
+                }
+            )
 
         return payload
 
@@ -460,7 +464,10 @@ class GeminiFireAlarmAnalyzer:
         )
 
     def _run_analysis_pipeline(
-        self, pages_text: List[Dict[str, Any]], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict[str, Any]],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Execute the core Gemini analysis steps once text has been extracted."""
 
@@ -483,7 +490,9 @@ class GeminiFireAlarmAnalyzer:
 
         # Step 1: Analyze cover pages for project info
         logger.info("Analyzing cover pages...")
-        project_info = safe_step(self._analyze_cover_pages, pages_text[:5], image_payload, default={})
+        project_info = safe_step(
+            self._analyze_cover_pages, pages_text[:5], image_payload, image_pages, default={}
+        )
 
         # Step 2: Identify fire alarm relevant pages (Rule-based, rarely fails)
         logger.info("Identifying fire alarm pages...")
@@ -491,11 +500,24 @@ class GeminiFireAlarmAnalyzer:
 
         # Step 3: Extract fire-alarm-specific code requirements
         logger.info("Extracting fire alarm codes...")
-        codes = safe_step(self._extract_code_requirements, pages_text, image_payload, default={'fire_alarm_codes': []})
+        codes = safe_step(
+            self._extract_code_requirements,
+            pages_text,
+            image_payload,
+            image_pages,
+            default={'fire_alarm_codes': []},
+        )
 
         # Step 4: Extract fire alarm notes from electrical pages
         logger.info("Extracting fire alarm notes...")
-        fa_notes = safe_step(self._extract_fire_alarm_notes, pages_text, fa_pages, image_payload, default=[])
+        fa_notes = safe_step(
+            self._extract_fire_alarm_notes,
+            pages_text,
+            fa_pages,
+            image_payload,
+            image_pages,
+            default=[],
+        )
 
         # Step 5: Extract mechanical fire alarm devices
         logger.info("Extracting mechanical FA devices...")
@@ -503,16 +525,31 @@ class GeminiFireAlarmAnalyzer:
             self._extract_mechanical_fa_devices,
             pages_text,
             image_payload,
+            image_pages,
             default={'duct_detectors': [], 'dampers': []}
         )
 
         # Step 6: Extract specifications
         logger.info("Extracting specifications...")
-        specifications = safe_step(self._extract_specifications, pages_text, fa_pages, image_payload, default={})
+        specifications = safe_step(
+            self._extract_specifications,
+            pages_text,
+            fa_pages,
+            image_payload,
+            image_pages,
+            default={},
+        )
 
         # Step 7: Generate structured takeoff summary
         logger.info("Generating structured takeoff summary...")
-        structured_summary = safe_step(self._generate_structured_takeoff, pages_text, fa_pages, image_payload, default={})
+        structured_summary = safe_step(
+            self._generate_structured_takeoff,
+            pages_text,
+            fa_pages,
+            image_payload,
+            image_pages,
+            default={},
+        )
 
         high_level_overview = self._build_high_level_overview(
             project_info, specifications, structured_summary
@@ -580,7 +617,7 @@ class GeminiFireAlarmAnalyzer:
                 'prompt_feedback': self.last_prompt_feedback
             }
 
-    def analyze_pdf(self, pdf_path: str, include_images: bool = False) -> Dict[str, Any]:
+    def analyze_pdf(self, pdf_path: str, include_images: bool = True) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
         """
@@ -602,7 +639,7 @@ class GeminiFireAlarmAnalyzer:
                 image_pages = self._select_pages_for_image_transmission(pages_text)
                 image_payload = self._build_image_payload(pdf_path, image_pages)
 
-            results = self._run_analysis_pipeline(pages_text, image_payload)
+            results = self._run_analysis_pipeline(pages_text, image_payload, image_pages)
 
             if include_images:
                 results['image_pages_sent'] = image_pages
@@ -632,17 +669,23 @@ class GeminiFireAlarmAnalyzer:
             }
     
     def _analyze_cover_pages(
-        self, cover_pages: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        cover_pages: List[Dict],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Analyze cover pages for project information"""
-        
+
         cover_text = "\n\n".join([p['text'] for p in cover_pages])
-        
-        prompt = f"""Analyze these construction bid set cover pages and extract ONLY the high-level project details that matter
-to a fire alarm estimator.
+
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
+        prompt = f"""Analyze these construction bid set cover pages and extract ONLY the high-level project details that matter to a fire alarm estimator.
 
 COVER PAGES TEXT:
 {cover_text[:15000]}
+
+{image_note}
 
 Extract the following information:
 1. PROJECT NAME: Official name of the project
@@ -669,7 +712,7 @@ Extract the following information:
         except Exception as e:
             logger.error(f"Error analyzing cover pages: {str(e)}")
             return {'error': str(e)}
-    
+
     def _identify_fire_alarm_pages(self, pages_text: List[Dict]) -> List[int]:
         """Identify which pages contain fire alarm information"""
         
@@ -694,16 +737,23 @@ Extract the following information:
         return sorted(list(set(fa_pages))) # Return unique, sorted list
     
     def _extract_code_requirements(
-        self, pages_text: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, List[str]]:
         """Extract fire-alarm-specific codes and standards"""
 
         code_pages = "\n\n".join([p['text'] for p in pages_text[:10]])  # Focus on front matter
 
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
         prompt = f"""Identify only the fire alarm and life-safety codes cited in this project.
 
 DOCUMENT TEXT:
 {code_pages[:10000]}
+
+{image_note}
 
 Extract a concise list of the exact editions referenced for:
 • FIRE ALARM CODES AND STANDARDS (e.g., NFPA 72-2019, NFPA 101-2018, UL 864).
@@ -732,7 +782,11 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
             return {'fire_alarm_codes': [], 'error': str(e)}
     
     def _extract_fire_alarm_notes(
-        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict],
+        fa_pages: List[int],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> List[Dict[str, str]]:
         """Extract fire alarm general notes from electrical pages"""
         
@@ -745,10 +799,14 @@ Do NOT list general building, electrical, mechanical, or plumbing codes unless t
         if not fa_text:
             return []
         
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
         prompt = f"""Analyze these electrical/fire alarm pages and extract ONLY the PROJECT-SPECIFIC fire alarm notes.
 
 PAGES TEXT:
 {fa_text[:15000]}
+
+{image_note}
 
 Extract fire alarm notes that are:
 ✓ Project-specific requirements
@@ -788,7 +846,10 @@ Example:
             return []
     
     def _extract_mechanical_fa_devices(
-        self, pages_text: List[Dict], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, List[Dict]]:
         """Extract duct detectors and fire/smoke dampers from mechanical pages"""
         
@@ -808,10 +869,14 @@ Example:
             for p in mech_pages
         ])
         
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
         prompt = f"""Analyze these mechanical pages and extract fire alarm-related devices.
 
 MECHANICAL PAGES TEXT:
 {mech_text[:15000]}
+
+{image_note}
 
 Extract:
 1. DUCT DETECTORS: Location, type, specifications
@@ -845,7 +910,11 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
             return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
     
     def _extract_specifications(
-        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict],
+        fa_pages: List[int],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Extract fire alarm system specifications"""
         
@@ -869,11 +938,15 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
         if not combined_text:
             return {}
 
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
         prompt = f"""Extract fire alarm system specifications from these pages. Always review fire alarm related notes AND any
 general notes to see if the plans list the manufacturer/model of an existing fire alarm control panel.
 
 SOURCE TEXT:
 {combined_text[:15000]}
+
+{image_note}
 
 Extract:
 1. CONTROL PANEL: Manufacturer, model, features
@@ -908,7 +981,11 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             return {'error': str(e)}
 
     def _generate_structured_takeoff(
-        self, pages_text: List[Dict], fa_pages: List[int], image_payload: Optional[List[Dict[str, Any]]] = None
+        self,
+        pages_text: List[Dict],
+        fa_pages: List[int],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """Create a structured takeoff summary modeled after the provided example."""
 
@@ -969,6 +1046,8 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
                 "Possible pitfalls/things to consider:\n- Mechanical schedule lists future RTUs not on drawings."
             )
 
+            image_note = self._image_guidance_text(image_payload, image_pages)
+
             prompt = f"""Using the representative PDF text below (cover pages plus fire alarm and mechanical excerpts),
 create a structured fire alarm takeoff summary. Mirror the tone and layout of the provided example summary block.
 
@@ -1001,6 +1080,10 @@ REQUIREMENTS:
 
 REPRESENTATIVE PROJECT TEXT:
 {combined_text}
+
+{image_note}
+
+Use the example layout as a template for the structure and tone of your response.
 """
 
             response_text = self._generate_model_text(prompt, images=image_payload)
@@ -1029,7 +1112,6 @@ REPRESENTATIVE PROJECT TEXT:
         except Exception as exc:
             logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
             return default_summary
-
     # ---------------------------------------------------------------------
     # Derived summary blocks for UI consumption
     # ---------------------------------------------------------------------
