@@ -391,6 +391,67 @@ def register_analysis_routes(app, analyzer):
             'data': payload,
         })
 
+    @app.route("/api/history/<job_id>/title", methods=["PATCH"])
+    def update_history_title(job_id):
+        """Update the saved project title for a history entry."""
+
+        payload = request.get_json(silent=True) or {}
+        project_name = (payload.get('project_name') or '').strip()
+
+        if not project_name:
+            return jsonify({'success': False, 'error': 'Project name is required'}), 400
+
+        updated = history_store.update_project_name(job_id, project_name)
+        if not updated:
+            return jsonify({'success': False, 'error': 'History entry not found'}), 404
+
+        return jsonify({'success': True, 'project_name': project_name})
+
+    @app.route("/api/history/<job_id>", methods=["DELETE"])
+    def delete_history_entry(job_id):
+        """Remove a stored history entry and its assets."""
+
+        try:
+            removed = history_store.delete_entry(job_id)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to delete history entry %s: %s", job_id, exc, exc_info=True)
+            return jsonify({'success': False, 'error': 'Failed to delete history entry'}), 500
+
+        if not removed:
+            return jsonify({'success': False, 'error': 'History entry not found'}), 404
+
+        with analysis_lock:
+            analysis_jobs.pop(job_id, None)
+
+        return jsonify({'success': True})
+
+    @app.route("/api/history/<job_id>/preview", methods=["GET"])
+    def history_preview(job_id):
+        """Return a PNG preview of the first page for a stored PDF."""
+
+        entry = history_store.load_entry(job_id)
+        if not entry or not entry.get('pdf_path'):
+            return jsonify({'success': False, 'error': 'History entry not found'}), 404
+
+        try:
+            with fitz.open(entry['pdf_path']) as doc:
+                if doc.page_count == 0:
+                    raise ValueError('PDF has no pages')
+
+                page = doc[0]
+                pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5), alpha=False)
+                image_bytes = pix.tobytes("png")
+        except Exception as exc:  # pragma: no cover - rendering best-effort
+            logger.error("Failed to build history preview for %s: %s", job_id, exc, exc_info=True)
+            return jsonify({'success': False, 'error': 'Unable to generate preview'}), 500
+
+        return send_file(
+            io.BytesIO(image_bytes),
+            mimetype='image/png',
+            as_attachment=False,
+            download_name='preview.png'
+        )
+
 
 def _extract_project_name(results: dict, fallback_name: str | None = None) -> str | None:
     """Derive a project name using Gemini output, falling back to filename."""

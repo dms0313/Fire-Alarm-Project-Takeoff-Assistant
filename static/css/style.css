@@ -68,6 +68,12 @@ h1 {
     margin-bottom: 12px;
 }
 
+.history-actions-inline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
 .history-status {
     color: #b0b0b0;
     font-size: 0.95rem;
@@ -83,6 +89,10 @@ h1 {
     gap: 12px;
 }
 
+.history-list.collapsed {
+    display: none;
+}
+
 .history-card {
     background: linear-gradient(145deg, #242424 0%, #1b1b1b 100%);
     border: 1px solid #2f2f2f;
@@ -91,6 +101,27 @@ h1 {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.history-card .history-preview {
+    position: relative;
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid #2a2a2a;
+    background: #111;
+}
+
+.history-card .history-preview img {
+    width: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.history-preview-fallback {
+    color: #9c9c9c;
+    text-align: center;
+    padding: 28px 10px;
+    font-size: 0.95rem;
 }
 
 .history-card h4 {
@@ -127,11 +158,18 @@ h1 {
     display: flex;
     justify-content: flex-start;
     gap: 10px;
+    flex-wrap: wrap;
 }
 
 .history-card .btn {
     padding: 8px 12px;
     font-size: 0.95rem;
+}
+
+.history-card .btn.btn-danger {
+    background: linear-gradient(135deg, #ff6b6b 0%, #d43f3f 100%);
+    border: none;
+    color: #fff;
 }
 
 .history-subtle {

@@ -121,3 +121,25 @@ class HistoryStore:
     def _read_json(self, path: str) -> Dict[str, Any]:
         with open(path, "r", encoding="utf-8") as handle:
             return json.load(handle)
+
+    def update_project_name(self, job_id: str, project_name: str) -> bool:
+        """Update the stored project name for a given job id."""
+
+        metadata_path = os.path.join(self._job_dir(job_id), "metadata.json")
+        if not os.path.isfile(metadata_path):
+            return False
+
+        metadata = self._read_json(metadata_path)
+        metadata["project_name"] = project_name
+        self._write_json(metadata_path, metadata)
+        return True
+
+    def delete_entry(self, job_id: str) -> bool:
+        """Remove a stored analysis from disk."""
+
+        job_dir = self._job_dir(job_id)
+        if not os.path.isdir(job_dir):
+            return False
+
+        shutil.rmtree(job_dir, ignore_errors=True)
+        return True
