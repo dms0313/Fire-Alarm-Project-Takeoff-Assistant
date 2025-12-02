@@ -158,8 +158,12 @@ def register_preview_routes(app, analyzer):
 
             # -----------------------------------------------------------------
             # Render PDF page and compute proper DPI scaling
+            #
+            # NOTE: We intentionally render at a lower DPI than the model's
+            # training resolution to keep the exported PDFs lightweight. The
+            # output is meant for reference, not pixel-perfect CAD fidelity.
             # -----------------------------------------------------------------
-            render_dpi = 180
+            render_dpi = 140
             training_dpi = 350
 
             page = doc[page_num - 1]
@@ -198,13 +202,10 @@ def register_preview_routes(app, analyzer):
             if font is None:
                 font = ImageFont.load_default()
 
-            render_dpi = 180
-            training_dpi = 350
-            
             # This is the scale factor for render DPI vs training DPI
             # Calculate a single scaling factor between the model’s DPI (350) and the
-            # rendered preview DPI (180).  See conversion notes here:contentReference[oaicite:0]{index=0}.
-            render_scale = render_dpi / training_dpi  # e.g. 180 / 350
+            # rendered preview DPI (140).  See conversion notes here:contentReference[oaicite:0]{index=0}.
+            render_scale = render_dpi / training_dpi  # e.g. 140 / 350
 
             class_colors = {}
             color_idx = 0
@@ -231,21 +232,21 @@ def register_preview_routes(app, analyzer):
                 w_350 = float(device.get('width', 0))
                 h_350 = float(device.get('height', 0))
 
-                # Scale everything to 180 DPI
-                x_center_180 = x_center_350 * render_scale
-                y_center_180 = y_center_350 * render_scale
-                w_180 = w_350 * render_scale
-                h_180 = h_350 * render_scale
+                # Scale everything to the rendered DPI
+                x_center_render = x_center_350 * render_scale
+                y_center_render = y_center_350 * render_scale
+                w_render = w_350 * render_scale
+                h_render = h_350 * render_scale
 
                 # Skip tiny boxes
-                if w_180 < 5 or h_180 < 5:
+                if w_render < 5 or h_render < 5:
                     continue
 
                 # Convert centre to corner coordinates
-                x1 = x_center_180 - (w_180 / 2)
-                y1 = y_center_180 - (h_180 / 2)
-                x2 = x_center_180 + (w_180 / 2)
-                y2 = y_center_180 + (h_180 / 2)
+                x1 = x_center_render - (w_render / 2)
+                y1 = y_center_render - (h_render / 2)
+                x2 = x_center_render + (w_render / 2)
+                y2 = y_center_render + (h_render / 2)
 
                 draw.rectangle([x1, y1, x2, y2], outline=color, width=4)
 
@@ -314,7 +315,13 @@ def register_preview_routes(app, analyzer):
             # Convert annotated image → single-page PDF
             # -----------------------------------------------------------------
             img_buffer = io.BytesIO()
-            annotated_image.save(img_buffer, format="PNG")
+            annotated_image.save(
+                img_buffer,
+                format="JPEG",
+                quality=70,
+                optimize=True,
+                subsampling="4:2:0",
+            )
             img_buffer.seek(0)
 
             pdf_output = fitz.open()
