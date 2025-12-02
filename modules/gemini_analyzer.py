@@ -341,6 +341,163 @@ class GeminiFireAlarmAnalyzer:
         return ordered
 
     @staticmethod
+    def _has_fire_alarm_signals(text_lower: str) -> bool:
+        """Detect whether the text contains clear fire alarm indicators."""
+
+        keywords = [
+            "fire alarm",
+            "fire-alarm",
+            "fa ",
+            " fa-",
+            "facp",
+            "notification device",
+            "horn strobe",
+            "speaker strobe",
+            "pull station",
+            "annunciator",
+            "riser diagram",
+            "smoke detector",
+            "heat detector",
+            "manual station",
+            "nac",
+            "life safety",
+        ]
+
+        return any(keyword in text_lower for keyword in keywords)
+
+    @staticmethod
+    def _is_landscaping_page(text_lower: str) -> bool:
+        """Return True if the page looks like landscaping/irrigation content."""
+
+        landscaping_keywords = [
+            "landscape",
+            "landscaping",
+            "planting plan",
+            "irrigation",
+            "tree protection",
+            "shrub",
+            "turf",
+        ]
+
+        return any(keyword in text_lower for keyword in landscaping_keywords)
+
+    @staticmethod
+    def _is_site_work_page(text_lower: str) -> bool:
+        """Return True if the page is primarily site/civil work."""
+
+        site_keywords = [
+            "site plan",
+            "site work",
+            "civil plan",
+            "grading",
+            "erosion control",
+            "stormwater",
+            "utility plan",
+            "paving plan",
+        ]
+
+        return any(keyword in text_lower for keyword in site_keywords)
+
+    @staticmethod
+    def _is_engineering_page(text_lower: str) -> bool:
+        """Return True if the page appears to be structural/engineering only."""
+
+        engineering_keywords = [
+            "structural",
+            "foundation plan",
+            "beam schedule",
+            "column schedule",
+            "truss",
+            "engineering calculation",
+            "structural general notes",
+        ]
+
+        return any(keyword in text_lower for keyword in engineering_keywords)
+
+    @staticmethod
+    def _is_architectural_page(text_lower: str) -> bool:
+        """Return True if the page is part of the architectural set."""
+
+        architectural_keywords = [
+            "architectural",
+            "floor plan",
+            "reflected ceiling plan",
+            "door schedule",
+            "finish schedule",
+            "partition schedule",
+            "wall section",
+            "a-",
+        ]
+
+        return any(keyword in text_lower for keyword in architectural_keywords)
+
+    @staticmethod
+    def _is_plumbing_page(text_lower: str) -> bool:
+        """Return True if the page is plumbing-focused."""
+
+        plumbing_keywords = [
+            "plumbing",
+            "sanitary",
+            "storm drain",
+            "domestic water",
+            "water heater",
+            "vent stack",
+        ]
+
+        return any(keyword in text_lower for keyword in plumbing_keywords)
+
+    def _filter_pages_for_gemini(
+        self, pages_text: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Remove non-fire-alarm sections before passing context to Gemini."""
+
+        if not pages_text:
+            return []
+
+        filtered_pages: List[Dict[str, Any]] = []
+        dropped_reasons: List[str] = []
+
+        for page in pages_text:
+            text = page.get("text", "") or ""
+            text_lower = text.lower()
+            page_number = page.get("page_number")
+
+            if self._is_landscaping_page(text_lower):
+                dropped_reasons.append(f"Page {page_number}: landscaping")
+                continue
+
+            if self._is_site_work_page(text_lower):
+                dropped_reasons.append(f"Page {page_number}: site work")
+                continue
+
+            if self._is_engineering_page(text_lower):
+                dropped_reasons.append(f"Page {page_number}: structural/engineering")
+                continue
+
+            if self._is_architectural_page(text_lower) and not self._has_fire_alarm_signals(text_lower):
+                dropped_reasons.append(f"Page {page_number}: architectural without fire alarm content")
+                continue
+
+            if self._is_plumbing_page(text_lower) and not self._has_fire_alarm_signals(text_lower):
+                dropped_reasons.append(f"Page {page_number}: plumbing without fire alarm content")
+                continue
+
+            filtered_pages.append(page)
+
+        if dropped_reasons:
+            logger.info(
+                "Filtered %s pages before Gemini transmission: %s",
+                len(dropped_reasons),
+                "; ".join(dropped_reasons[:20]),
+            )
+            if len(dropped_reasons) > 20:
+                logger.info("Additional pages filtered (not listed): %s", len(dropped_reasons) - 20)
+        else:
+            logger.info("No pages filtered before Gemini transmission.")
+
+        return filtered_pages
+
+    @staticmethod
     def _image_guidance_text(
         image_payload: Optional[List[Dict[str, Any]]],
         image_pages: Optional[List[int]] = None,
@@ -683,7 +840,15 @@ class GeminiFireAlarmAnalyzer:
 
         try:
             self.last_prompt_feedback = None
-            return self._run_analysis_pipeline(pages_text)
+            filtered_pages = self._filter_pages_for_gemini(pages_text)
+
+            if not filtered_pages:
+                return {
+                    'success': False,
+                    'error': 'All pages were filtered out before Gemini analysis.'
+                }
+
+            return self._run_analysis_pipeline(filtered_pages)
         except GeminiPromptBlocked as exc:
             logger.error("Gemini analysis blocked: %s", exc)
             return {
@@ -721,12 +886,19 @@ class GeminiFireAlarmAnalyzer:
             logger.info(f"Starting Gemini analysis of PDF: {pdf_path}")
 
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
+            filtered_pages = self._filter_pages_for_gemini(pages_text)
+
+            if not filtered_pages:
+                return {
+                    'success': False,
+                    'error': 'All pages were filtered out before Gemini analysis.'
+                }
 
             image_pages: List[int] = []
             image_payload: Optional[List[Dict[str, Any]]] = None
             image_error: Optional[str] = None
             if include_images:
-                image_pages = self._select_pages_for_image_transmission(pages_text)
+                image_pages = self._select_pages_for_image_transmission(filtered_pages)
                 try:
                     image_payload = self._build_image_payload(pdf_path, image_pages)
                 except Exception as exc:  # pragma: no cover - defensive guard for heavy PDFs
@@ -734,7 +906,7 @@ class GeminiFireAlarmAnalyzer:
                     logger.error(image_error, exc_info=True)
                     image_payload = None
 
-            results = self._run_analysis_pipeline(pages_text, image_payload, image_pages)
+            results = self._run_analysis_pipeline(filtered_pages, image_payload, image_pages)
 
             if include_images:
                 results['image_pages_sent'] = image_pages
