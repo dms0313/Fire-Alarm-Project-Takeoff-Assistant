@@ -8,7 +8,6 @@ import logging
 import os
 import json
 import re
-import copy
 import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -744,53 +743,45 @@ class GeminiFireAlarmAnalyzer:
         logger.info("Identifying fire alarm pages...")
         fa_pages = self._identify_fire_alarm_pages(pages_text)
 
-        # Step 3: Extract fire-alarm-specific code requirements
+        # Step 3: Prepare a lean subset of pages to reduce token usage
+        focused_pages = self._prioritize_pages_for_ai(pages_text, fa_pages)
+
+        # Step 4: Extract fire-alarm-specific code requirements
         logger.info("Extracting fire alarm codes...")
         codes = safe_step(
             self._extract_code_requirements,
-            pages_text,
+            focused_pages,
             image_payload,
             image_pages,
             default={'fire_alarm_codes': []},
         )
 
-        # Step 4: Extract fire alarm notes from electrical pages
+        # Step 5: Extract fire alarm notes from electrical pages
         logger.info("Extracting fire alarm notes...")
         fa_notes = safe_step(
             self._extract_fire_alarm_notes,
-            pages_text,
+            focused_pages,
             fa_pages,
             image_payload,
             image_pages,
             default=[],
         )
 
-        # Step 5: Extract mechanical fire alarm devices
+        # Step 6: Extract mechanical fire alarm devices
         logger.info("Extracting mechanical FA devices...")
         mechanical_devices = safe_step(
             self._extract_mechanical_fa_devices,
-            pages_text,
+            focused_pages,
             image_payload,
             image_pages,
             default={'duct_detectors': [], 'dampers': []}
         )
 
-        # Step 6: Extract specifications
+        # Step 7: Extract specifications
         logger.info("Extracting specifications...")
         specifications = safe_step(
             self._extract_specifications,
-            pages_text,
-            fa_pages,
-            image_payload,
-            image_pages,
-            default={},
-        )
-
-        # Step 7: Generate structured takeoff summary
-        logger.info("Generating structured takeoff summary...")
-        structured_summary = safe_step(
-            self._generate_structured_takeoff,
-            pages_text,
+            focused_pages,
             fa_pages,
             image_payload,
             image_pages,
@@ -798,13 +789,12 @@ class GeminiFireAlarmAnalyzer:
         )
 
         high_level_overview = self._build_high_level_overview(
-            project_info, specifications, structured_summary
+            project_info, specifications
         )
         fire_alarm_briefing = self._build_fire_alarm_briefing(
             codes,
             specifications,
             fa_notes,
-            structured_summary,
         )
 
         results = {
@@ -817,7 +807,7 @@ class GeminiFireAlarmAnalyzer:
             'fire_alarm_notes': fa_notes,
             'mechanical_devices': mechanical_devices,
             'specifications': specifications,
-            'structured_summary': structured_summary,
+            'structured_summary': {},
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat()
         }
@@ -1004,6 +994,52 @@ Extract the following information:
                     fa_pages.append(page['page_number'])
         
         return sorted(list(set(fa_pages))) # Return unique, sorted list
+
+    def _prioritize_pages_for_ai(
+        self,
+        pages_text: List[Dict[str, Any]],
+        fa_pages: List[int],
+        max_pages: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """Return a trimmed list of representative pages to keep prompts fast."""
+
+        prioritized: List[Dict[str, Any]] = []
+        seen_pages = set()
+
+        def add_page(page: Dict[str, Any]):
+            page_number = page.get('page_number')
+            if page_number in seen_pages:
+                return
+            seen_pages.add(page_number)
+            prioritized.append(page)
+
+        # Always include the first few pages for project context
+        for page in pages_text[:5]:
+            add_page(page)
+
+        # Bring in pages the rule-based detector tagged as fire alarm related
+        for page in pages_text:
+            if page.get('page_number') in fa_pages:
+                add_page(page)
+
+        # Grab mechanical/HVAC-heavy pages because they often influence FA scope
+        mechanical_keywords = {'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu'}
+        for page in pages_text:
+            if len(prioritized) >= max_pages:
+                break
+            if page.get('page_number') in seen_pages:
+                continue
+            text = (page.get('text') or '').lower()
+            if any(keyword in text for keyword in mechanical_keywords):
+                add_page(page)
+
+        # Fill remaining slots with the earliest pages to preserve document order
+        for page in pages_text:
+            if len(prioritized) >= max_pages:
+                break
+            add_page(page)
+
+        return prioritized[:max_pages]
     
     def _extract_code_requirements(
         self,
@@ -1249,146 +1285,14 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
 
-    def _generate_structured_takeoff(
-        self,
-        pages_text: List[Dict],
-        fa_pages: List[int],
-        image_payload: Optional[List[Dict[str, Any]]] = None,
-        image_pages: Optional[List[int]] = None,
-    ) -> Dict[str, Any]:
-        """Create a structured takeoff summary modeled after the provided example."""
-
-        default_summary = {
-            'project_details': {},
-            'sections': {
-                'codes': [],
-                'equipment': [],
-                'mechanical': [],
-                'elevator': [],
-                'access_control': [],
-                'estimating_notes': [],
-                'required_modules': []
-            },
-            'possible_pitfalls': []
-        }
-
-        try:
-            cover_text = "\n\n".join([
-                f"PAGE {p['page_number']}:\n{p['text']}"
-                for p in pages_text[:5]
-                if p.get('text')
-            ])
-
-            fa_text = "\n\n".join([
-                f"PAGE {p['page_number']}:\n{p['text']}"
-                for p in pages_text
-                if p['page_number'] in fa_pages and p.get('text')
-            ])
-
-            mechanical_keywords = [
-                'mechanical', 'hvac', 'duct', 'damper', 'air handler', 'rtu', 'ahu'
-            ]
-            mechanical_text = "\n\n".join([
-                f"PAGE {p['page_number']}:\n{p['text']}"
-                for p in pages_text
-                if p.get('text') and any(keyword in p['text'].lower() for keyword in mechanical_keywords)
-            ])
-
-            combined_text = "\n\n".join(filter(None, [
-                "### COVER / PROJECT INFO PAGES", cover_text,
-                "### FIRE ALARM / ELECTRICAL EXCERPTS", fa_text,
-                "### MECHANICAL / HVAC EXCERPTS", mechanical_text
-            ]))[:15000]
-
-            if not combined_text:
-                return default_summary
-
-            layout_example = (
-                "Project: Example Civic Center | Location: Sample City, ST | Bid Date: TBD\n"
-                "1. Codes & Permits\n- NFPA 72-2019 referenced throughout electrical sheets.\n"
-                "2. Equipment Scope\n- Provide addressable FACP with NAC power supplies.\n"
-                "3. Mechanical Integration\n- Monitor all duct detectors tied to AHUs and RTUs.\n"
-                "4. Elevator Coordination\n- Provide shunt-trip monitoring and recall interfaces.\n"
-                "5. Access Control\n- Coordinate card reader contacts with FA for door release.\n"
-                "6. Estimating Notes\n- Allow extra time for phased renovation work.\n"
-                "7. Required System Modules\n- Include voice evacuation and network communicator.\n"
-                "Possible pitfalls/things to consider:\n- Mechanical schedule lists future RTUs not on drawings."
-            )
-
-            image_note = self._image_guidance_text(image_payload, image_pages)
-
-            prompt = f"""Using the representative PDF text below (cover pages plus fire alarm and mechanical excerpts),
-create a structured fire alarm takeoff summary. Mirror the tone and layout of the provided example summary block.
-
-EXAMPLE LAYOUT TO FOLLOW:
-{layout_example}
-
-REQUIREMENTS:
-• Focus on project-specific content that affects the fire alarm scope.
-• Return STRICT JSON only (no markdown) with this structure:
-  {{
-    "project_details": {{
-        "name": string or null,
-        "location": string or null,
-        "bid_date": string or null,
-        "scope_snapshot": string or null
-    }},
-    "sections": {{
-        "codes": [strings],
-        "equipment": [strings],
-        "mechanical": [strings],
-        "elevator": [strings],
-        "access_control": [strings],
-        "estimating_notes": [strings],
-        "required_modules": [strings]
-    }},
-    "possible_pitfalls": [strings]
-  }}
-• Keep bullet points concise and reference sheet/page callouts when available.
-• Note unknown items as null or empty arrays instead of inventing data.
-
-REPRESENTATIVE PROJECT TEXT:
-{combined_text}
-
-{image_note}
-
-Use the example layout as a template for the structure and tone of your response.
-"""
-
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return default_summary
-
-            parsed = self._parse_json(response_text, default_summary)
-
-            if not isinstance(parsed, dict):
-                return default_summary
-
-            summary = copy.deepcopy(default_summary)
-            summary['project_details'] = parsed.get('project_details') or {}
-
-            merged_sections = copy.deepcopy(default_summary['sections'])
-            for key, value in (parsed.get('sections') or {}).items():
-                merged_sections[key] = value
-            summary['sections'] = merged_sections
-
-            summary['possible_pitfalls'] = parsed.get('possible_pitfalls') or []
-            return summary
-        except GeminiPromptBlocked:
-            raise
-        except GeminiRequestFailed:
-            raise
-        except Exception as exc:
-            logger.error(f"Error generating structured takeoff summary: {exc}", exc_info=True)
-            return default_summary
     # ---------------------------------------------------------------------
     # Derived summary blocks for UI consumption
     # ---------------------------------------------------------------------
-    def _build_high_level_overview(self, project_info: Dict[str, Any], specifications: Dict[str, Any], structured_summary: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_high_level_overview(self, project_info: Dict[str, Any], specifications: Dict[str, Any]) -> Dict[str, Any]:
         """Create a concise project snapshot for the estimator-focused UI."""
 
         sprinkler_status = project_info.get('sprinkler_status') or self._get_spec_value(specifications, 'SPRINKLER_SYSTEM')
-        fire_alarm_required = project_info.get('fire_alarm_required') or self._infer_requirement_from_summary(structured_summary)
+        fire_alarm_required = project_info.get('fire_alarm_required')
 
         return {
             'project_name': project_info.get('project_name') or project_info.get('name'),
@@ -1405,7 +1309,6 @@ Use the example layout as a template for the structure and tone of your response
         codes: Dict[str, Any],
         specifications: Dict[str, Any],
         fire_alarm_notes: List[Dict[str, Any]],
-        structured_summary: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Compile key requirements and notes for the fire alarm scope."""
 
@@ -1423,13 +1326,7 @@ Use the example layout as a template for the structure and tone of your response
                 pretty_label = label.replace('_', ' ').title()
                 requirement_items.append(f"{pretty_label}: {value}")
 
-        equipment_items = []
-        if structured_summary:
-            sections = structured_summary.get('sections') or {}
-            equipment_items.extend(sections.get('equipment') or [])
-            codes_from_summary = sections.get('codes') or []
-            if codes_from_summary:
-                requirement_items.extend(codes_from_summary)
+        equipment_items: List[str] = []
 
         codes_list = []
         if isinstance(codes, dict) and isinstance(codes.get('fire_alarm_codes'), list):
@@ -1463,17 +1360,3 @@ Use the example layout as a template for the structure and tone of your response
 
         return None
 
-    def _infer_requirement_from_summary(self, structured_summary: Dict[str, Any]) -> Optional[str]:
-        """Attempt to infer if fire alarm is required from the structured summary text."""
-
-        if not structured_summary or not isinstance(structured_summary, dict):
-            return None
-
-        notes = structured_summary.get('sections', {}).get('estimating_notes') or []
-        combined = " ".join([str(note) for note in notes]).lower()
-
-        if 'fire alarm not required' in combined or 'no fire alarm' in combined:
-            return 'No'
-        if 'fire alarm' in combined:
-            return 'Yes'
-        return None
