@@ -1722,8 +1722,11 @@ function buildFireAlarmBriefingCard(briefing = {}, structuredSummary = {}, fireA
 }
 
 function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
-    const { duct_detectors: ductDetectors = [], dampers = [] } = mechanicalDevices;
-    const hasDevices = (Array.isArray(ductDetectors) && ductDetectors.length > 0) || (Array.isArray(dampers) && dampers.length > 0);
+    const { duct_detectors: ductDetectors = [], dampers = [], high_airflow_units: highAirflowUnits = [] } = mechanicalDevices;
+    const hasDevices =
+        (Array.isArray(ductDetectors) && ductDetectors.length > 0) ||
+        (Array.isArray(dampers) && dampers.length > 0) ||
+        (Array.isArray(highAirflowUnits) && highAirflowUnits.length > 0);
 
     if (!hasDevices) {
         const { card, content } = createGeminiCard('Mechanical Requirements (Fire Alarm)', 'full-width');
@@ -1747,8 +1750,12 @@ function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
                 const parts = [];
                 if (device.page) parts.push(`Page ${device.page}`);
                 if (device.device_type) parts.push(device.device_type);
-                if (device.location) parts.push(device.location);
+                if (device.location || device.equipment_id) parts.push(device.location || device.equipment_id);
                 if (device.quantity) parts.push(`Qty ${device.quantity}`);
+                if (device.airflow_cfm) parts.push(`${device.airflow_cfm} CFM`);
+                if (device.damper_type) parts.push(device.damper_type);
+                if (device.requires_duct_detector) parts.push(`Duct detector: ${device.requires_duct_detector}`);
+                if (device.fire_alarm_action) parts.push(device.fire_alarm_action);
                 if (device.specifications) parts.push(device.specifications);
                 li.textContent = parts.filter(Boolean).join(' — ');
                 list.appendChild(li);
@@ -1763,49 +1770,36 @@ function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
 
     createDeviceSection('Duct Detectors', ductDetectors);
     createDeviceSection('Smoke / Fire Dampers', dampers);
+    createDeviceSection('HVAC Equipment Over 2000 CFM', highAirflowUnits);
 
     const helper = document.createElement('p');
     helper.className = 'card-helper';
-    helper.textContent = 'Lists duct detectors and smoke dampers that must report to the fire alarm system for coordination with mechanical sheets.';
+    helper.textContent = 'Lists duct detectors, high-CFM HVAC units, and smoke dampers that must report to the fire alarm system for coordination with mechanical sheets.';
     content.appendChild(helper);
 
     return card;
 }
 
 function buildDeviceLayoutCard(deviceLayout = {}) {
-    const placements = deviceLayout.device_locations || [];
+    const primaryPage = deviceLayout.primary_fa_page || {};
     const unusual = deviceLayout.unusual_placements || [];
     const coDetection = deviceLayout.co_detection || {};
     const hasCoDetails = !!(coDetection && (coDetection.needed || coDetection.reason));
 
-    if (!placements.length && !unusual.length && !hasCoDetails) {
+    const hasPrimaryPage = Object.keys(primaryPage).length > 0;
+
+    if (!hasPrimaryPage && !unusual.length && !hasCoDetails) {
         return null;
     }
 
     const { card, content } = createGeminiCard('Device Placement Review', 'full-width');
 
-    if (placements.length > 0) {
-        const heading = document.createElement('h4');
-        heading.textContent = 'Devices with Page References';
-        content.appendChild(heading);
-
-        const list = document.createElement('ul');
-        placements.forEach((placement) => {
-            const li = document.createElement('li');
-            const page = placement.page ?? '?';
-            const device = placement.device_type || placement.device || 'Device';
-            const location = placement.location ? ` at ${placement.location}` : '';
-            const note = placement.placement_note || placement.note;
-            li.textContent = `Pg ${page}: ${device}${location}`;
-            if (note) {
-                const detail = document.createElement('span');
-                detail.className = 'device-note';
-                detail.textContent = ` – ${note}`;
-                li.appendChild(detail);
-            }
-            list.appendChild(li);
-        });
-        content.appendChild(list);
+    if (hasPrimaryPage) {
+        const pageRow = document.createElement('p');
+        const pageLabel = primaryPage.page ? `Page ${primaryPage.page}` : 'Unknown page';
+        const reason = primaryPage.reason ? ` – ${primaryPage.reason}` : '';
+        pageRow.textContent = `Most fire alarm devices appear on ${pageLabel}${reason}`;
+        content.appendChild(pageRow);
     }
 
     if (unusual.length > 0) {
