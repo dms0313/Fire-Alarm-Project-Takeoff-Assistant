@@ -63,6 +63,24 @@
                     </div>
                     <div id="fileName" class="file-name"></div>
                     <div id="fileError" class="file-error" role="alert"></div>
+
+                    <div class="spec-upload" aria-label="Optional specification book upload">
+                        <div class="spec-upload-header">
+                            <div>
+                                <h3 class="section-title">📚 Spec Book (Optional)</h3>
+                                <p class="section-subtitle">Attach the spec book so Gemini can pull Division 28 fire alarm sections.</p>
+                            </div>
+                            <p class="spec-helper">Only fire alarm sections are sent to Gemini.</p>
+                        </div>
+                        <div class="drop-zone spec-drop" id="specDropZone" tabindex="0" role="button"
+                            aria-label="Click to select or drop spec PDF">
+                            <div class="drop-zone-icon">📑</div>
+                            <h3>Drop spec book here or click to browse</h3>
+                            <p class="upload-help">Optional: PDF format</p>
+                            <input type="file" id="specFileInput" accept=".pdf,.PDF" style="display: none;">
+                        </div>
+                        <div id="specFileName" class="file-name"></div>
+                    </div>
                 </div>
 
                 <div class="page-selection" id="pageSelection">
