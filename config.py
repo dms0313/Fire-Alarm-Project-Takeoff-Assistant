@@ -128,8 +128,12 @@ LOCAL_MODEL_PATH, LOCAL_MODEL_FOUND, LOCAL_MODEL_SEARCH_PATHS = _collect_candida
 _RAW_GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 _RAW_GOOGLE_KEY = os.environ.get("GOOGLE_API_KEY")
 GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
-GEMINI_MODEL = "gemini-3-pro-preview"
+
+# Default to a broadly available model to reduce 403s from restricted previews,
+# while still allowing overrides via environment variable.
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_MODEL_CHOICES = [
+    "gemini-2.0-flash",
     "gemini-3-pro-preview",
     "gemini-2.0-pro-exp",
     "gemini-2.5-pro-preview-03-25",
