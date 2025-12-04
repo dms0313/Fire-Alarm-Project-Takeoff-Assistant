@@ -1,0 +1,160 @@
+{
+  "success": true,
+  "project_info": {
+    "project_name": "Mr. D's Donuts Restaurant - Building Shell",
+    "project_address": "14465 Metcalf Ave.",
+    "project_location": "Overland Park, Kansas",
+    "project_type": "Restaurant (Assembly A-2)",
+    "fire_alarm_required": "No",
+    "sprinkler_status": "Non-Sprinkled",
+    "scope_summary": "Freestanding restaurant building shell only. Interior finish to be handled by separate tenant finish submittal. The building is single story, slab on grade.",
+    "voice_required": "No"
+  },
+  "high_level_overview": {
+    "project_name": "Mr. D's Donuts Restaurant - Building Shell",
+    "project_address": "14465 Metcalf Ave.",
+    "project_type": "Restaurant (Assembly A-2)",
+    "fire_alarm_required": "No",
+    "sprinkler_status": "Non-Sprinkled",
+    "scope_summary": "Freestanding restaurant building shell only. Interior finish to be handled by separate tenant finish submittal. The building is single story, slab on grade.",
+    "project_number": null
+  },
+  "fire_alarm_briefing": {
+    "requirements": [
+      "Applicable Codes: 2018 IBC, 2018 IFC referenced on Sheet A1.0 Code Analysis.",
+      "Occupancy: A-2 Restaurant (Assembly) Building Shell Only.",
+      "Fire Protection: Sheet A1.0 explicitly states 'NO FIRE ALARM PROPOSED' and 'NON-SPRINKLED'.",
+      "Construction Type: V-B (Unprotected)."
+    ],
+    "equipment": [
+      "No specific FACP or notification appliances shown on current architectural set.",
+      "Design is for 'Building Shell Only'; future tenant finish submittal may require FA devices."
+    ],
+    "codes": [
+      "2018 International Fire Code"
+    ],
+    "notes": [
+      {
+        "page": 1,
+        "note_type": "System Requirement",
+        "content": "NO FIRE ALARM PROPOSED"
+      },
+      {
+        "page": 1,
+        "note_type": "Construction/Maintenance Note",
+        "content": "Removal and replacement of smoke detectors to prevent false alarms."
+      },
+      {
+        "page": 1,
+        "note_type": "Coordination Note",
+        "content": "Daily notification of the Fire Dept. when fire safety systems are taken out of service and reinstated."
+      },
+      {
+        "page": 1,
+        "note_type": "Coordination Note",
+        "content": "Tagging of valves and disconnects of life safety systems."
+      }
+    ]
+  },
+  "code_requirements": {
+    "fire_alarm_codes": [
+      "2018 International Fire Code"
+    ]
+  },
+  "fire_alarm_pages": [
+    10,
+    16
+  ],
+  "fire_alarm_notes": [
+    {
+      "page": 1,
+      "note_type": "System Requirement",
+      "content": "NO FIRE ALARM PROPOSED"
+    },
+    {
+      "page": 1,
+      "note_type": "Construction/Maintenance Note",
+      "content": "Removal and replacement of smoke detectors to prevent false alarms."
+    },
+    {
+      "page": 1,
+      "note_type": "Coordination Note",
+      "content": "Daily notification of the Fire Dept. when fire safety systems are taken out of service and reinstated."
+    },
+    {
+      "page": 1,
+      "note_type": "Coordination Note",
+      "content": "Tagging of valves and disconnects of life safety systems."
+    }
+  ],
+  "mechanical_devices": {
+    "duct_detectors": [],
+    "dampers": []
+  },
+  "specifications": {
+    "CONTROL_PANEL": null,
+    "DEVICES": null,
+    "NOTIFICATION_DEVICES": null,
+    "SYSTEM_TYPE": null,
+    "COMMUNICATION": null,
+    "POWER_REQUIREMENTS": null,
+    "MONITORING": null,
+    "INTEGRATION": null,
+    "SPRINKLER_SYSTEM": "The building is listed as Non-Sprinkled (Source: Page A1.0 Code Analysis).",
+    "APPROVED_MANUFACTURERS": null,
+    "AUDIO_SYSTEM": null,
+    "EXISTING_SYSTEM_PANEL_MODEL": null
+  },
+  "structured_summary": {
+    "project_details": {
+      "name": "Mr. D's Donuts | Lot 11 Lionsgate Shopping Center",
+      "location": "14485 Metcalf Ave, Overland Park, Kansas",
+      "bid_date": "Plan Date: Nov 24, 2025",
+      "scope_snapshot": "New freestanding restaurant shell building (A-2 Assembly). Plans currently indicate no fire alarm proposed for the shell scope."
+    },
+    "sections": {
+      "codes": [
+        "Applicable Codes: 2018 IBC, 2018 IFC referenced on Sheet A1.0 Code Analysis.",
+        "Occupancy: A-2 Restaurant (Assembly) Building Shell Only.",
+        "Fire Protection: Sheet A1.0 explicitly states 'NO FIRE ALARM PROPOSED' and 'NON-SPRINKLED'.",
+        "Construction Type: V-B (Unprotected)."
+      ],
+      "equipment": [
+        "No specific FACP or notification appliances shown on current architectural set.",
+        "Design is for 'Building Shell Only'; future tenant finish submittal may require FA devices."
+      ],
+      "mechanical": [
+        "RTU-1 and RTU-2 shown on Roof Plan (Sheet A2.2).",
+        "Coordinate duct detector requirements based on CFM ratings (Mechanical Plan M1 listed in index but not provided).",
+        "Kitchen hood suppression monitoring likely required for future donut/coffee equipment (Occupancy A-2)."
+      ],
+      "elevator": [],
+      "access_control": [
+        "Main Entry and Patio Access doors shown on Floor Plan A2.1.",
+        "Verify if egress doors require interface for future mag-locks or card access."
+      ],
+      "estimating_notes": [
+        "Scope is limited to 'Building Shell'; verify if rough-in is required for future tenant FA system.",
+        "Project involves a 'Future Wall' and 'Future Occupant Load' (Sheet A1.0); system sizing depends on final load."
+      ],
+      "required_modules": [
+        "Monitor modules for future sprinkler flow/tamper if scope changes to sprinklered.",
+        "Monitor modules for kitchen hood suppression (future tenant scope)."
+      ]
+    },
+    "possible_pitfalls": [
+      "Sheet A1.0 lists 'Future Occupant Load: TBD'. If final load >300, a manual fire alarm system may become mandatory per IFC despite 'No Fire Alarm Proposed' note.",
+      "Structural drawings (S-series) included in OCR text but irrelevant to FA scope; focus remains on A-series for layout.",
+      "Plans list M1 and E1.0 in Drawing Index (A1.0) but these are not present; blind spots regarding exact HVAC shutdown requirements."
+    ]
+  },
+  "total_pages": 14,
+  "analysis_timestamp": "2025-12-03T11:34:02.573209",
+  "image_pages_sent": [
+    1,
+    2,
+    3
+  ],
+  "images_attached_to_gemini": true,
+  "job_id": "f0ccca09-d0e3-411a-afa6-4a777469138f"
+}

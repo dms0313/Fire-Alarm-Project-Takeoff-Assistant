@@ -1,0 +1,103 @@
+{
+  "success": true,
+  "project_info": {
+    "project_name": "Total Wine Spirits - Beer & More (Store 1806)",
+    "project_address": "13657 Washington St, Kansas City, MO 64145",
+    "project_location": "Kansas City, MO",
+    "project_type": "Retail",
+    "fire_alarm_required": "Yes",
+    "sprinkler_status": "Sprinkled (Existing system to remain and be protected)",
+    "scope_summary": "Interior renovation and demolition of an existing retail space. Project involves removing specific walls, fixtures, and flooring while preserving the existing Fire Alarm and Sprinkler systems. New layout includes a Wine Education Room, Wine Cellar, and sales floor updates.",
+    "voice_required": "No"
+  },
+  "high_level_overview": {
+    "project_name": "Total Wine Spirits - Beer & More (Store 1806)",
+    "project_address": "13657 Washington St, Kansas City, MO 64145",
+    "project_type": "Retail",
+    "fire_alarm_required": "Yes",
+    "sprinkler_status": "Sprinkled (Existing system to remain and be protected)",
+    "scope_summary": "Interior renovation and demolition of an existing retail space. Project involves removing specific walls, fixtures, and flooring while preserving the existing Fire Alarm and Sprinkler systems. New layout includes a Wine Education Room, Wine Cellar, and sales floor updates.",
+    "project_number": null
+  },
+  "fire_alarm_briefing": {
+    "requirements": [],
+    "equipment": [],
+    "codes": [],
+    "notes": [
+      {
+        "page": 3,
+        "note_type": "Keyed Notes",
+        "content": "7. EXISTING LOCATION FOR ALARM PANEL."
+      },
+      {
+        "page": 3,
+        "note_type": "Coordination Note",
+        "content": "11. THE AUTHORITY HAVING JURISDICTION REQUIRES SUCCESSFUL COMPLETION OF ALL LIFE SAFETY INSPECTIONS PRIOR TO THE INSTALLATION OF RACKS, SHELVING AND STOCKING OF THE STORE. THE GC SHALL COORDINATE WITH THE AHJ AND TOTAL WINE & MORE TO COMPLETE ALL LIFE SAFETY INSPECTIONS IN A TIMELY MANNER PRIOR TO RACKING AND SHELVING INSTALLATION."
+      },
+      {
+        "page": 41,
+        "note_type": "Demolition Instruction",
+        "content": "NOTE TO GC: DO NOT DEMOLISH DEMARC EQUIPMENT OR CONDUIT TO DEMARC. DO NOT DEMOLISH EXISTING FIRE ALARM SYSTEM OR CONDUIT TO FIRE ALARM SYSTEM. LEAVE BOTH SYSTEMS UNDAMAGED AT THEIR EXISTING LOCATION. EXISTING PLYWOOD AT EXTERIOR WALL ADJACENT TO DEMARC TO REMAIN."
+      }
+    ]
+  },
+  "code_requirements": {
+    "fire_alarm_codes": []
+  },
+  "fire_alarm_pages": [
+    3,
+    41,
+    43,
+    50,
+    56,
+    58,
+    63,
+    67,
+    68
+  ],
+  "fire_alarm_notes": [
+    {
+      "page": 3,
+      "note_type": "Keyed Notes",
+      "content": "7. EXISTING LOCATION FOR ALARM PANEL."
+    },
+    {
+      "page": 3,
+      "note_type": "Coordination Note",
+      "content": "11. THE AUTHORITY HAVING JURISDICTION REQUIRES SUCCESSFUL COMPLETION OF ALL LIFE SAFETY INSPECTIONS PRIOR TO THE INSTALLATION OF RACKS, SHELVING AND STOCKING OF THE STORE. THE GC SHALL COORDINATE WITH THE AHJ AND TOTAL WINE & MORE TO COMPLETE ALL LIFE SAFETY INSPECTIONS IN A TIMELY MANNER PRIOR TO RACKING AND SHELVING INSTALLATION."
+    },
+    {
+      "page": 41,
+      "note_type": "Demolition Instruction",
+      "content": "NOTE TO GC: DO NOT DEMOLISH DEMARC EQUIPMENT OR CONDUIT TO DEMARC. DO NOT DEMOLISH EXISTING FIRE ALARM SYSTEM OR CONDUIT TO FIRE ALARM SYSTEM. LEAVE BOTH SYSTEMS UNDAMAGED AT THEIR EXISTING LOCATION. EXISTING PLYWOOD AT EXTERIOR WALL ADJACENT TO DEMARC TO REMAIN."
+    }
+  ],
+  "mechanical_devices": {
+    "duct_detectors": [],
+    "dampers": []
+  },
+  "specifications": {
+    "CONTROL_PANEL": null,
+    "DEVICES": null,
+    "NOTIFICATION_DEVICES": null,
+    "SYSTEM_TYPE": null,
+    "COMMUNICATION": null,
+    "POWER_REQUIREMENTS": null,
+    "MONITORING": null,
+    "INTEGRATION": null,
+    "SPRINKLER_SYSTEM": "Building has an existing fire sprinkler system. Notes on Page 41 (D1.0) state: 'DO NOT DEMOLISH EXISTING FIRE SPRINKLER LINE TESTING VALVE OR PIPE. DO NOT DEMOLISH EXISTING FIRE SPRINKLER LINES, HEADS OR ANY OTHER ITEM CONNECTED TO THE FIRE SPRINKLER SYSTEM.'",
+    "APPROVED_MANUFACTURERS": [],
+    "AUDIO_SYSTEM": null,
+    "EXISTING_SYSTEM_PANEL_MODEL": null
+  },
+  "structured_summary": {},
+  "total_pages": 10,
+  "analysis_timestamp": "2025-12-03T12:00:06.180983",
+  "image_pages_sent": [
+    3,
+    41,
+    43
+  ],
+  "images_attached_to_gemini": true,
+  "job_id": "83f8e0b6-7422-44e5-adb6-6974c36aef15"
+}
