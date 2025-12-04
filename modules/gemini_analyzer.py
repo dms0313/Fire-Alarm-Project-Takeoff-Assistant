@@ -1382,12 +1382,11 @@ PAGES TEXT:
 {image_note}
 
 Extract fire alarm notes that are:
-✓ Project-specific requirements (e.g., "Provide weatherproof devices in parking garage")
-✓ Device quantities or locations (e.g., "Provide (3) spare smoke detectors")
-✓ System specifications (e.g., "Class A wiring required for SLC")
-✓ Special installation requirements
-✓ Coordination notes with other trades (e.g., "Interlock with elevator controller")
-✓ Code Compliance Notes (e.g., "System must meet NFPA 72-2019 spacing")
+✓ Panel, annunciator, or riser room locations and access instructions
+✓ Critical system requirements or specialty devices (e.g., elevator recall interfaces, suppression system tie-ins, beam/aspirating detection, smoke control interfaces)
+✓ Unique installation constraints that affect layout or pricing (e.g., weatherproof requirements for garage devices, conduit routing requirements, monitoring of fire pump or generator)
+✓ Coordination notes with other trades that the fire alarm contractor must address
+✓ Code Compliance Notes that are specific to this project (e.g., "System must meet NFPA 72-2019 spacing")
 
 DO NOT extract:
 ✗ Standard NFPA mounting heights (unless non-standard)
@@ -1395,6 +1394,7 @@ DO NOT extract:
 ✗ Standard distance from walls/ceilings
 ✗ Boilerplate code compliance text
 ✗ General electrical notes not related to fire alarm
+✗ Locations of typical field devices (e.g., individual smoke detectors, horn/strobes) unless the note calls out a unique or critical device
 ✗ Any mention of fire stopping, fire sealing, or other references to construction trades outside of the fire alarm scope
 
 Format as JSON array with objects containing:
@@ -1410,7 +1410,33 @@ Example:
             response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return []
-            return self._parse_json(response_text, [])
+            parsed_notes = self._parse_json(response_text, [])
+            if not isinstance(parsed_notes, list):
+                return []
+
+            unique_notes = []
+            seen_contents = set()
+
+            for note in parsed_notes:
+                if not isinstance(note, dict):
+                    continue
+
+                content = (note.get('content') or note.get('note') or note.get('text') or '').strip()
+                if not content:
+                    continue
+
+                normalized = re.sub(r"\s+", " ", content).lower()
+                if normalized in seen_contents:
+                    continue
+                seen_contents.add(normalized)
+
+                unique_notes.append({
+                    'page': note.get('page'),
+                    'note_type': note.get('note_type'),
+                    'content': content,
+                })
+
+            return unique_notes
         except GeminiPromptBlocked:
             raise
         except GeminiRequestFailed:
