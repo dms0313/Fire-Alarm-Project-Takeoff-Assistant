@@ -27,7 +27,7 @@ SYSTEM_INSTRUCTIONS = (
     "You are an expert Fire Alarm Sales Estimator and Code Consultant. Your goal is to review construction "
     "documents (blueprints and specifications) to extract a precise Bill of Materials (BOM) and scope of work "
     "for a commercial fire alarm system. You must filter out all non-relevant information (e.g., landscaping, "
-    "civil, structural, plumbing) and focus strictly on Life Safety and Fire Alarm requirements.\n\n"
+    "civil, structural, plumbing) and focus strictly Fire Alarm requirements.\n\n"
     "You are deeply knowledgeable in:\n"
     "- NFPA 72 (National Fire Alarm and Signaling Code)\n"
     "- NFPA 101 (Life Safety Code)\n"
@@ -402,6 +402,10 @@ class GeminiFireAlarmAnalyzer:
             "manual station",
             "nac",
             "life safety",
+            "smoke alarm",
+            "duct smoke detector",
+            "fac",
+            "smoke control",
         ]
 
         return any(keyword in text_lower for keyword in keywords)
@@ -558,6 +562,12 @@ class GeminiFireAlarmAnalyzer:
             "pull station",
             "alarm control",
             "fa system",
+            "facp",
+            "co",
+            "fire smoke",
+            "addressable",
+            "nac",
+            "duct smoke detector"
         ]
 
         filtered: List[Dict[str, Any]] = []
@@ -682,6 +692,9 @@ class GeminiFireAlarmAnalyzer:
             "speaker strobe",
             "pull station",
             "annunciator",
+            "ann",
+            "duct smoke detector",
+            "smoke sensor"
         ]
 
         electrical_section_keywords = [
