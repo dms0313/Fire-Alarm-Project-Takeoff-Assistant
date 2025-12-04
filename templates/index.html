@@ -200,6 +200,20 @@
                     </p>
                     <p class="copy-helper hidden" id="copyGeminiStatus"></p>
                 </div>
+
+                <div class="gemini-follow-up" aria-label="Ask follow-up questions to Gemini">
+                    <div class="follow-up-header">
+                        <div>
+                            <h3 class="section-title">🔁 Ask Gemini a Follow-Up</h3>
+                            <p class="gemini-helper">Use after a Gemini run to clarify devices, page numbers, or CO monitoring.</p>
+                        </div>
+                        <button class="btn btn-secondary" id="askFollowUpBtn" disabled>Ask Follow-Up</button>
+                    </div>
+                    <label class="sr-only" for="followUpQuestion">Follow-up question</label>
+                    <textarea id="followUpQuestion" rows="3" placeholder="Example: Are there any devices on level 2 that seem out of place?" aria-label="Enter a follow-up question for Gemini"></textarea>
+                    <p class="copy-helper" id="followUpStatus" aria-live="polite"></p>
+                    <div class="gemini-follow-up-response hidden" id="followUpResponse" aria-live="polite"></div>
+                </div>
             </div>
 
             <div class="gemini-progress hidden" id="geminiProgress" role="status" aria-live="polite">
