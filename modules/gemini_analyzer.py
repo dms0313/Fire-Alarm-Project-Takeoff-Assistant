@@ -67,6 +67,7 @@ class GeminiFireAlarmAnalyzer:
         self.initialization_error: Optional[str] = None
         self.last_prompt_feedback: Optional[Dict[str, Any]] = None
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
+        self.tried_models: List[str] = []
 
         if self.api_key:
             self._initialize_model(self.current_model)
@@ -87,6 +88,8 @@ class GeminiFireAlarmAnalyzer:
             self.model = genai.GenerativeModel(model_name)
             self.current_model = model_name
             self.initialization_error = None
+            if model_name not in self.tried_models:
+                self.tried_models.append(model_name)
             logger.info(f"✅ Gemini AI initialized successfully with {model_name}")
             return True
         except Exception as exc:  # pragma: no cover - depends on runtime credentials
@@ -319,6 +322,18 @@ class GeminiFireAlarmAnalyzer:
                     )
                     logger.error(permission_msg)
                     self.initialization_error = permission_msg
+
+                    fallback_model = self._next_fallback_model()
+                    if fallback_model:
+                        logger.warning(
+                            "Attempting fallback Gemini model after 403: %s -> %s",
+                            self.current_model,
+                            fallback_model,
+                        )
+                        if self._initialize_model(fallback_model):
+                            logger.info("Retrying Gemini request with fallback model %s", fallback_model)
+                            continue
+
                     self.model = None
                     last_error = permission_msg
                     break
@@ -341,6 +356,14 @@ class GeminiFireAlarmAnalyzer:
         raise GeminiRequestFailed(
             f"Gemini request failed after {self.max_retries} attempts: {last_error}"
         )
+
+    def _next_fallback_model(self) -> Optional[str]:
+        """Return the next available model that has not yet been tried."""
+
+        for model_name in self.available_models:
+            if model_name not in self.tried_models:
+                return model_name
+        return None
 
     @staticmethod
     def _unique_page_order(page_numbers: List[int]) -> List[int]:
