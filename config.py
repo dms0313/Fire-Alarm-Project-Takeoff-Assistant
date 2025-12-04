@@ -131,10 +131,10 @@ GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
 
 # Default to a broadly available model to reduce 403s from restricted previews,
 # while still allowing overrides via environment variable.
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3-pro-preview")
 GEMINI_MODEL_CHOICES = [
-    "gemini-2.5-pro",
     "gemini-3-pro-preview",
+    "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-pro-preview-03-25",
     "gemini-2.5-flash",
@@ -146,7 +146,7 @@ GEMINI_MODEL_CHOICES = [
 # PROCESSING SETTINGS
 # =============================================================================
 TILE_SIZE = 640
-DPI = 350
+DPI = 90
 OVERLAP_PERCENT = 0.25
 DEFAULT_CONFIDENCE = 0.55
 MAX_WORKERS = 4
