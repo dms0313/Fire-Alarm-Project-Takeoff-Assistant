@@ -24,16 +24,20 @@ from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_CHOICES  # Assumes
 
 
 SYSTEM_INSTRUCTIONS = (
-    "You are a fire alarm sales estimator that reviews construction documents and "
-    "extracts all unique fire alarm related details from a complete set of building "
-    "plans, filtering out non-fire alarm related information and only returning "
-    "project related unique details and specifications for commercial fire alarm "
-    "systems. You are well versed in NFPA and IBC codes and you cross check the "
-    "information given in construction documents with applicable code versions to "
-    "determine if any inconsistencies or errors are present. You focus on the fire "
-    "alarm pages, usually shown on \"Special Systems\" pages, \"Power Plan\" pages, or "
-    "dedicated \"Fire Alarm\" pages. You always check mechanical pages for duct "
-    "detectors and fire smoke damper details."
+    "You are an expert Fire Alarm Sales Estimator and Code Consultant. Your goal is to review construction "
+    "documents (blueprints and specifications) to extract a precise Bill of Materials (BOM) and scope of work "
+    "for a commercial fire alarm system. You must filter out all non-relevant information (e.g., landscaping, "
+    "civil, structural, plumbing) and focus strictly on Life Safety and Fire Alarm requirements.\n\n"
+    "You are deeply knowledgeable in:\n"
+    "- NFPA 72 (National Fire Alarm and Signaling Code)\n"
+    "- NFPA 101 (Life Safety Code)\n"
+    "- IBC (International Building Code)\n\n"
+    "When analyzing documents:\n"
+    "1. Identify the applicable code versions (e.g., NFPA 72-2016, IBC 2018).\n"
+    "2. Cross-check project requirements against these codes to identify potential errors or missing devices.\n"
+    "3. Always check Mechanical/HVAC plans for Duct Detectors and Fire/Smoke Dampers that require FA monitoring.\n"
+    "4. Look for 'Class A' vs 'Class B' wiring requirements.\n"
+    "5. Verify if Voice Evacuation is required."
 )
 
 logger = logging.getLogger("fire-alarm-analyzer")
@@ -1098,13 +1102,14 @@ COVER PAGES TEXT:
 Extract the following information:
 1. PROJECT NAME: Official name of the project
 2. PROJECT ADDRESS OR LOCATION: Street address or city/state reference
-3. PROJECT TYPE: (e.g., School, Hospital, Office Building, etc.)
-4. FIRE ALARM REQUIRED: State "Yes", "No", or "Unknown" based on the documents
-5. SPRINKLER STATUS: Indicate if the building is sprinkled and if FA must monitor it
-6. SCOPE SUMMARY: Brief summary of the overall project scope
-7. VOICE REQUIRED: State "Yes", "No", or "Unknown" based on the documents
+3. PROJECT TYPE: (e.g., School, Hospital, Office Building, High-Rise, etc.)
+4. APPLICABLE CODES: List any specific code versions mentioned (e.g., "IBC 2018", "NFPA 72-2016").
+5. FIRE ALARM REQUIRED: State "Yes", "No", or "Unknown" based on the documents.
+6. SPRINKLER STATUS: Indicate if the building is sprinkled and if FA must monitor it.
+7. SCOPE SUMMARY: Brief summary of the overall project scope.
+8. VOICE REQUIRED: State "Yes", "No", or "Unknown" based on the documents.
 
-        Format your response as JSON with these keys: project_name, project_address, project_location, project_type, fire_alarm_required, sprinkler_status, scope_summary, voice_required.
+        Format your response as JSON with these keys: project_name, project_address, project_location, project_type, applicable_codes, fire_alarm_required, sprinkler_status, scope_summary, voice_required.
         If information is not found, use null.
         """
 
@@ -1211,10 +1216,13 @@ DOCUMENT TEXT:
 
 Extract a concise list of the exact editions referenced for:
 • FIRE ALARM CODES AND STANDARDS (e.g., NFPA 72-2019, NFPA 101-2018, UL 864).
+• BUILDING CODES (e.g., IBC 2018, CBC 2019) if they are relevant to Life Safety.
 
-Do NOT list general building, electrical, mechanical, or plumbing codes unless they directly govern the fire alarm scope.
+Also, briefly note if you detect any CONFLICTS between cited codes (e.g., citing an outdated NFPA version vs a newer IBC).
 
-        Return JSON with a single key fire_alarm_codes which is an array of strings. Use an empty array if nothing is found.
+        Return JSON with:
+        - fire_alarm_codes: array of strings (e.g. ["NFPA 72-2016", "IBC 2015"])
+        - code_notes: string (optional, for any conflicts or observations)
         """
 
         try:
@@ -1263,14 +1271,15 @@ PAGES TEXT:
 {image_note}
 
 Extract fire alarm notes that are:
-✓ Project-specific requirements
-✓ Device quantities or locations
-✓ System specifications
+✓ Project-specific requirements (e.g., "Provide weatherproof devices in parking garage")
+✓ Device quantities or locations (e.g., "Provide (3) spare smoke detectors")
+✓ System specifications (e.g., "Class A wiring required for SLC")
 ✓ Special installation requirements
-✓ Coordination notes with other trades
+✓ Coordination notes with other trades (e.g., "Interlock with elevator controller")
+✓ Code Compliance Notes (e.g., "System must meet NFPA 72-2019 spacing")
 
 DO NOT extract:
-✗ Standard NFPA mounting heights
+✗ Standard NFPA mounting heights (unless non-standard)
 ✗ Generic "shall comply with" statements
 ✗ Standard distance from walls/ceilings
 ✗ Boilerplate code compliance text
@@ -1279,7 +1288,7 @@ DO NOT extract:
 
 Format as JSON array with objects containing:
 - page: page number
-- note_type: (e.g., "System Requirement", "Device Specification", "Installation Note", "Keyed Notes")
+- note_type: (e.g., "System Requirement", "Device Specification", "Installation Note", "Code Compliance")
 - content: the actual note text
 
 Example:
@@ -1407,21 +1416,22 @@ SOURCE TEXT:
 {image_note}
 
 Extract:
-1. CONTROL PANEL: Manufacturer, model, features
-2. DEVICES: Types of devices required (smoke, heat, pull stations, etc.)
-3. NOTIFICATION DEVICES: Types (horns, strobes, speakers)
-4. SYSTEM TYPE: (e.g., addressable, conventional, hybrid)
-5. COMMUNICATION: How system communicates (Ethernet, phone line, cellular)
-6. POWER REQUIREMENTS: Backup battery, UPS requirements
-7. MONITORING: Central station monitoring requirements
-8. INTEGRATION: Integration with other systems (access control, BMS, etc.)
-9. SPRINKLER SYSTEM: State whether the building has a sprinkler system and how the fire alarm must monitor it.
-10. APPROVED MANUFACTURERS: List any specific fire alarm manufacturers/brands the specifications call out (return an array).
-11. AUDIO / VOICE SYSTEM: Specify if a voice evacuation or audio system is required, optional, or explicitly not required.
-12. EXISTING SYSTEM PANEL MODEL: If the drawings mention an existing fire alarm panel to remain, capture the exact
+1. CONTROL PANEL: Manufacturer, model, features.
+2. DEVICES: Types of devices required (smoke, heat, pull stations, etc.).
+3. NOTIFICATION DEVICES: Types (horns, strobes, speakers, low frequency sounders).
+4. SYSTEM TYPE: (e.g., Addressable, Conventional, Voice Evac).
+5. WIRING CLASS: (e.g., Class A, Class B, Style 4, Style 6, Style 7).
+6. COMMUNICATION: How system communicates (Ethernet, phone line, cellular, radio).
+7. POWER REQUIREMENTS: Backup battery (e.g. 24hr + 5min), UPS requirements.
+8. MONITORING: Central station monitoring requirements.
+9. INTEGRATION: Integration with other systems (access control, BMS, elevator, suppression).
+10. SPRINKLER SYSTEM: State whether the building has a sprinkler system and how the fire alarm must monitor it.
+11. APPROVED MANUFACTURERS: List any specific fire alarm manufacturers/brands the specifications call out (return an array).
+12. AUDIO / VOICE SYSTEM: Specify if a voice evacuation or audio system is required, optional, or explicitly not required.
+13. EXISTING SYSTEM PANEL MODEL: If the drawings mention an existing fire alarm panel to remain, capture the exact
     manufacturer and model number from any fire alarm notes or general notes. Return null if nothing is referenced.
 
-Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM.
+Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL.
         Use null if not found. APPROVED_MANUFACTURERS should be an array if provided.
         """
 

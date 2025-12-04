@@ -133,9 +133,9 @@ GEMINI_API_KEY = _RAW_GEMINI_KEY or _RAW_GOOGLE_KEY
 # while still allowing overrides via environment variable.
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_MODEL_CHOICES = [
-    "gemini-2.0-flash",
+    "gemini-2.5-pro",
     "gemini-3-pro-preview",
-    "gemini-2.0-pro-exp",
+    "gemini-2.5-flash",
     "gemini-2.5-pro-preview-03-25",
     "gemini-2.5-flash",
     "gemini-2.0-flash-lite-preview",
