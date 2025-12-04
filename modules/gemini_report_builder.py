@@ -131,6 +131,7 @@ def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
     mech_sections = [
         ("Duct Detectors", mechanical_devices.get("duct_detectors", [])),
         ("Fire / Smoke Dampers", mechanical_devices.get("dampers", [])),
+        ("HVAC Equipment Over 2000 CFM", mechanical_devices.get("high_airflow_units", [])),
     ]
     added_mechanical = False
     for title, devices in mech_sections:
@@ -141,11 +142,20 @@ def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
                 if not isinstance(device, dict):
                     continue
                 page = _format_page_label(device.get("page"))
+                airflow = device.get("airflow_cfm")
+                damper_type = device.get("damper_type")
+                fire_alarm_action = device.get("fire_alarm_action")
+                requires_dd = device.get("requires_duct_detector")
+
                 parts = [
                     f"{page}",
                     device.get("device_type"),
-                    device.get("location"),
+                    device.get("location") or device.get("equipment_id"),
                     f"Qty: {device.get('quantity')}" if device.get("quantity") else None,
+                    f"Airflow: {airflow} CFM" if airflow else None,
+                    damper_type,
+                    f"Duct detector: {requires_dd}" if requires_dd else None,
+                    fire_alarm_action,
                     device.get("specifications"),
                 ]
                 text = " | ".join(filter(None, map(str, parts)))
@@ -161,23 +171,17 @@ def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
     # Device placement review
     device_layout = results.get("device_layout_review") or {}
     document.add_heading("Device Placement Review", level=1)
-    placements = device_layout.get("device_locations") or []
+    primary_page = device_layout.get("primary_fa_page") or {}
     unusual = device_layout.get("unusual_placements") or []
     co_detection = device_layout.get("co_detection") or {}
 
-    if placements:
-        document.add_paragraph("Devices noted on the plans with page references:")
-        for placement in placements:
-            page = _format_page_label(placement.get("page"))
-            label = placement.get("device_type") or placement.get("device") or "Device"
-            location = placement.get("location")
-            note = placement.get("placement_note") or placement.get("note")
-            parts = [page, label]
-            if location:
-                parts.append(f"at {location}")
-            if note:
-                parts.append(str(note))
-            document.add_paragraph(" | ".join(filter(None, parts)), style="List Bullet")
+    if primary_page:
+        page_label = _format_page_label(primary_page.get("page"))
+        reason = primary_page.get("reason") or primary_page.get("note")
+        text = f"Most fire alarm devices appear on {page_label}"
+        if reason:
+            text += f" – {reason}"
+        document.add_paragraph(text)
 
     if unusual:
         document.add_paragraph("Unusual placements or explanations:")
@@ -202,7 +206,7 @@ def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
         if co_reason:
             co_text += f" – {co_reason}"
         paragraph.add_run(co_text)
-    elif not (placements or unusual):
+    elif not (primary_page or unusual):
         document.add_paragraph("No specific device placement details were captured.")
 
     # Specifications & manufacturers

@@ -1486,25 +1486,35 @@ Example:
 
         prompt = f"""Analyze these mechanical pages and extract fire alarm-related devices.
 
+Always check the HVAC schedule to see if any equipment moves more than 2000 CFM. Those units should be listed with airflow and
+whether a duct detector/relay is required.
+For dampers, flag only NON-FUSIBLE-LINK types that require fire alarm control; fused-link dampers do NOT need relays.
+
 MECHANICAL PAGES TEXT:
 {mech_text[:15000]}
 
 {image_note}
 
 Extract:
-1. DUCT DETECTORS: Location, type, specifications
-2. FIRE/SMOKE DAMPERS: Location, type, specifications
+1. DUCT DETECTORS: Location, type, airflow (if given), specifications
+2. FIRE/SMOKE DAMPERS: Location, type (state if non-fusible link), required fire alarm action/relay
+3. HIGH AIRFLOW HVAC: Any HVAC equipment over 2000 CFM from the schedule with airflow, ID, and whether a duct detector or relay is
+   required.
 
 For each device, extract:
 - page: page number
 - device_type: specific type (e.g., "Duct Smoke Detector", "Fire Damper")
 - location: where it's located (e.g., "RTU-1", "all transfer ducts")
 - quantity: if specified
-- specifications: any specific requirements (e.g., "provide relay to FACP")
+- airflow_cfm: airflow if provided (use number only)
+- damper_type: state "non-fusible link" or "fusible link" when mentioned
+- requires_duct_detector: Yes/No if airflow is over 2000 CFM
+- fire_alarm_action/specifications: any specific requirements (e.g., "provide relay to FACP")
 
 Format as JSON with keys:
 - duct_detectors: array of duct detector objects
 - dampers: array of damper objects
+- high_airflow_units: array of HVAC equipment over 2000 CFM
 
 Only return devices that require fire alarm integration. Ignore generic HVAC notes or mechanical requirements that do not involve fire alarm monitoring or control. If none found, use empty arrays.
 """
@@ -1513,14 +1523,14 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
             response_text = self._generate_model_text(prompt, images=image_payload)
             if not response_text:
                 return {'duct_detectors': [], 'dampers': []}
-            return self._parse_json(response_text, {'duct_detectors': [], 'dampers': []})
+            return self._parse_json(response_text, {'duct_detectors': [], 'dampers': [], 'high_airflow_units': []})
         except GeminiPromptBlocked:
             raise
         except GeminiRequestFailed:
             raise
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
-            return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
+            return {'duct_detectors': [], 'dampers': [], 'high_airflow_units': [], 'error': str(e)}
 
     def _review_device_layout(
         self,
@@ -1548,13 +1558,13 @@ PAGES TEXT:
 {image_note}
 
 Extract the following and ALWAYS provide page numbers where available:
-1) DEVICE LOCATIONS: List devices called out on the drawings with their page number, device type, location/room, and any placement note.
+1) PRIMARY DEVICE PAGE: Identify the single page/sheet where the most fire alarm devices are shown or called out. Provide the page number and a short reason (e.g., "main FA floor plan" or "device matrix"). Do NOT list each device individually.
 2) UNUSUAL PLACEMENTS: If devices appear in atypical locations (e.g., notification appliance inside mechanical room, detector outdoors), capture the placement and the stated reason or probable intent.
 3) CO DETECTION CHECK: State whether carbon monoxide detection is required or explicitly not required, and why (e.g., fuel-burning equipment, parking garage, or explicit note).
 
 Return JSON with:
 {{
-  "device_locations": [{{"page": 1, "device_type": "Smoke Detector", "location": "Lobby", "placement_note": "ceiling near elevator"}}],
+  "primary_fa_page": {{"page": 1, "reason": "Main FA device layout"}},
   "unusual_placements": [{{"page": 2, "device_type": "Strobe", "placement": "Mechanical room", "reason": "Owner request for internal alarm"}}],
   "co_detection": {{"needed": "Yes/No/Unknown", "reason": "why"}}
 }}
@@ -1566,7 +1576,7 @@ Return JSON with:
                 return {}
             return self._parse_json(
                 response_text,
-                {'device_locations': [], 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': None}},
+                {'primary_fa_page': {}, 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': None}},
             )
         except GeminiPromptBlocked:
             raise
@@ -1574,7 +1584,7 @@ Return JSON with:
             raise
         except Exception as exc:
             logger.error("Error during device layout review: %s", exc)
-            return {'device_locations': [], 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': str(exc)}}
+            return {'primary_fa_page': {}, 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': str(exc)}}
 
     def _extract_specifications(
         self,
@@ -1846,17 +1856,29 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
                 continue
             for device in devices:
                 label = device.get('device_type') or device.get('type') or device_type
-                location = device.get('location')
+                location = device.get('location') or device.get('equipment_id')
                 qty = device.get('quantity')
                 details = device.get('specifications') or device.get('specs')
+                airflow = device.get('airflow_cfm')
+                damper_type = device.get('damper_type')
+                fa_action = device.get('fire_alarm_action')
+                requires_dd = device.get('requires_duct_detector')
 
                 parts = [label]
                 if location:
                     parts.append(f"at {location}")
                 if qty:
                     parts.append(f"qty: {qty}")
+                if airflow:
+                    parts.append(f"airflow: {airflow} CFM")
+                if damper_type:
+                    parts.append(str(damper_type))
+                if requires_dd:
+                    parts.append(f"duct detector: {requires_dd}")
                 if details:
                     parts.append(str(details))
+                if fa_action:
+                    parts.append(str(fa_action))
 
                 mech_bullets.append(" - ".join(parts))
 
@@ -1873,18 +1895,14 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         if device_layout_review:
             layout_bullets: List[str] = []
 
-            for placement in device_layout_review.get('device_locations', []) or []:
-                device_label = placement.get('device_type') or placement.get('device') or 'Device'
-                page = placement.get('page')
-                location = placement.get('location')
-                note = placement.get('placement_note') or placement.get('note')
-                parts = [device_label]
-                if location:
-                    parts.append(f"at {location}")
-                if note:
-                    parts.append(str(note))
-                prefix = f"Page {page}: " if page is not None else ""
-                layout_bullets.append(prefix + " - ".join(parts))
+            primary_page = device_layout_review.get('primary_fa_page') or {}
+            if primary_page:
+                page = primary_page.get('page')
+                reason = primary_page.get('reason') or primary_page.get('note')
+                text = f"Most fire alarm devices shown on page {page if page is not None else '?'}"
+                if reason:
+                    text += f" – {reason}"
+                layout_bullets.append(text)
 
             for unusual in device_layout_review.get('unusual_placements', []) or []:
                 page = unusual.get('page')
