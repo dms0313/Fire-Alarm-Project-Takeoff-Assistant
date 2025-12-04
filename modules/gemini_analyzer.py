@@ -1323,6 +1323,7 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
         fa_pages: List[int],
         image_payload: Optional[List[Dict[str, Any]]] = None,
         image_pages: Optional[List[int]] = None,
+        spec_sections: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Extract fire alarm system specifications"""
         
