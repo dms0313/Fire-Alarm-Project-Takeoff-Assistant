@@ -269,6 +269,47 @@ def register_analysis_routes(app, analyzer):
             if os.path.exists(temp_dir):
                 os.rmdir(temp_dir)
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route("/api/gemini_follow_up", methods=["POST"])
+    def gemini_follow_up():
+        """Answer follow-up questions using prior Gemini context."""
+
+        if not analyzer.gemini_analyzer.is_available():
+            return jsonify({'success': False, 'error': 'Gemini AI not configured'}), 400
+
+        payload = request.get_json(silent=True) or {}
+        question = (payload.get('question') or '').strip()
+        job_id = payload.get('job_id')
+
+        if not question:
+            return jsonify({'success': False, 'error': 'A follow-up question is required.'}), 400
+
+        if not job_id:
+            return jsonify({'success': False, 'error': 'Missing job_id for follow-up context.'}), 400
+
+        with analysis_lock:
+            job = analysis_jobs.get(job_id)
+
+        if not job or job.get('analysis_type') != 'gemini':
+            return jsonify({'success': False, 'error': 'Gemini analysis results not found for this job ID.'}), 404
+
+        try:
+            results = job.get('results') or {}
+            pdf_path = job.get('pdf_path')
+            spec_pdf_path = job.get('spec_pdf_path')
+
+            follow_up = analyzer.gemini_analyzer.answer_follow_up_question(
+                question,
+                prior_results=results,
+                pdf_path=pdf_path,
+                spec_pdf_path=spec_pdf_path,
+            )
+
+            status_code = 200 if follow_up.get('success') else 400
+            return jsonify(follow_up), status_code
+        except Exception as exc:
+            logger.error("Follow-up question failed: %s", exc, exc_info=True)
+            return jsonify({'success': False, 'error': str(exc)}), 500
     
     @app.route("/api/visualize/<job_id>/<int:page_num>", methods=["GET"])
     def visualize_page(job_id, page_num):

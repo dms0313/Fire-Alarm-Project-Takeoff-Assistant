@@ -41,6 +41,10 @@ const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
 const geminiModelSelect = document.getElementById('geminiModelSelect');
 const geminiPanel = document.getElementById('geminiPanel');
+const followUpQuestion = document.getElementById('followUpQuestion');
+const askFollowUpBtn = document.getElementById('askFollowUpBtn');
+const followUpStatus = document.getElementById('followUpStatus');
+const followUpResponse = document.getElementById('followUpResponse');
 const historyList = document.getElementById('historyList');
 const historyStatus = document.getElementById('historyStatus');
 const historyToggle = document.getElementById('historyToggle');
@@ -112,6 +116,7 @@ DocumentReady(() => {
     setupUploadInteractions();
     setupControls();
     setupModelSelector();
+    setupFollowUp();
     setPageSelectionCollapsed(true);
     setHistoryCollapsed(true);
     resetGeminiUI();
@@ -466,6 +471,126 @@ function resetGeminiUI() {
     }
     setCopyStatus('');
     updateGeminiReportButtonState();
+    clearFollowUpUI();
+    setFollowUpEnabled(false);
+}
+
+function setupFollowUp() {
+    if (askFollowUpBtn) {
+        askFollowUpBtn.addEventListener('click', askFollowUpQuestion);
+    }
+    if (followUpQuestion) {
+        followUpQuestion.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                askFollowUpQuestion();
+            }
+        });
+    }
+    clearFollowUpUI();
+    setFollowUpEnabled(false);
+}
+
+function clearFollowUpUI() {
+    if (followUpQuestion) {
+        followUpQuestion.value = '';
+    }
+    if (followUpStatus) {
+        followUpStatus.textContent = '';
+    }
+    if (followUpResponse) {
+        followUpResponse.classList.add('hidden');
+        followUpResponse.innerHTML = '';
+    }
+}
+
+function setFollowUpEnabled(enabled) {
+    if (askFollowUpBtn) {
+        askFollowUpBtn.disabled = !enabled;
+    }
+}
+
+function setFollowUpStatus(message = '', variant = 'info') {
+    if (!followUpStatus) return;
+    followUpStatus.textContent = message;
+    followUpStatus.className = `copy-helper ${variant === 'error' ? 'error' : ''}`.trim();
+}
+
+function renderFollowUpResponse(payload = {}) {
+    if (!followUpResponse) return;
+    followUpResponse.innerHTML = '';
+    const answer = document.createElement('p');
+    answer.textContent = payload.answer || 'No answer returned.';
+    followUpResponse.appendChild(answer);
+
+    if (Array.isArray(payload.referenced_pages) && payload.referenced_pages.length > 0) {
+        const pageWrapper = document.createElement('div');
+        pageWrapper.className = 'follow-up-pages';
+        pageWrapper.appendChild(document.createTextNode('Referenced Pages: '));
+        payload.referenced_pages.forEach((page) => {
+            const chip = createChip(`Pg ${page}`);
+            pageWrapper.appendChild(chip);
+        });
+        followUpResponse.appendChild(pageWrapper);
+    }
+
+    if (payload.co_detection) {
+        const co = document.createElement('p');
+        const needed = payload.co_detection.needed || 'Unknown';
+        const reason = payload.co_detection.reason ? ` (${payload.co_detection.reason})` : '';
+        co.textContent = `CO Detection: ${needed}${reason}`;
+        followUpResponse.appendChild(co);
+    }
+
+    if (Array.isArray(payload.notes) && payload.notes.length > 0) {
+        const noteList = document.createElement('ul');
+        payload.notes.forEach((note) => {
+            if (!note) return;
+            const li = document.createElement('li');
+            li.textContent = note;
+            noteList.appendChild(li);
+        });
+        followUpResponse.appendChild(noteList);
+    }
+
+    followUpResponse.classList.remove('hidden');
+}
+
+async function askFollowUpQuestion() {
+    if (!askFollowUpBtn || askFollowUpBtn.disabled) return;
+    const question = followUpQuestion ? followUpQuestion.value.trim() : '';
+    if (!question) {
+        setFollowUpStatus('Enter a follow-up question first.', 'error');
+        return;
+    }
+    if (!currentGeminiJobId) {
+        setFollowUpStatus('Run Gemini first to ask follow-up questions.', 'error');
+        return;
+    }
+
+    setFollowUpEnabled(false);
+    setFollowUpStatus('Requesting follow-up answer...');
+    if (followUpResponse) {
+        followUpResponse.classList.add('hidden');
+    }
+
+    try {
+        const resp = await fetch('/api/gemini_follow_up', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: currentGeminiJobId, question }),
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            throw new Error(data.error || 'Unable to complete follow-up question.');
+        }
+        renderFollowUpResponse(data.response);
+        setFollowUpStatus('Follow-up answered.');
+    } catch (err) {
+        console.error('Follow-up failed', err);
+        setFollowUpStatus(err.message || 'Follow-up failed. Try again.', 'error');
+    } finally {
+        setFollowUpEnabled(!!currentGeminiJobId && !!latestGeminiResults);
+    }
 }
 
 function updateGeminiButtonAvailability() {
@@ -1298,6 +1423,9 @@ function displayGeminiResults(data, options = {}) {
         return;
     }
 
+    clearFollowUpUI();
+    setFollowUpEnabled(true);
+
     currentGeminiJobId = data.job_id || null;
     updateGeminiReportButtonState();
     latestGeminiResults = data;
@@ -1315,6 +1443,7 @@ function displayGeminiResults(data, options = {}) {
         fire_alarm_pages: fireAlarmPages = [],
         fire_alarm_notes: fireAlarmNotes = [],
         mechanical_devices: mechanicalDevices = {},
+        device_layout_review: deviceLayoutReview = {},
         specifications = {},
         structured_summary: structuredSummary = {},
         total_pages: totalPages,
@@ -1339,6 +1468,11 @@ function displayGeminiResults(data, options = {}) {
     const mechanicalCard = buildMechanicalRequirementsCard(mechanicalDevices);
     if (mechanicalCard) {
         geminiResultsSection.appendChild(mechanicalCard);
+    }
+
+    const deviceLayoutCard = buildDeviceLayoutCard(deviceLayoutReview);
+    if (deviceLayoutCard) {
+        geminiResultsSection.appendChild(deviceLayoutCard);
     }
 
     const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
@@ -1632,6 +1766,81 @@ function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
     const helper = document.createElement('p');
     helper.className = 'card-helper';
     helper.textContent = 'Lists duct detectors and smoke dampers that must report to the fire alarm system for coordination with mechanical sheets.';
+    content.appendChild(helper);
+
+    return card;
+}
+
+function buildDeviceLayoutCard(deviceLayout = {}) {
+    const placements = deviceLayout.device_locations || [];
+    const unusual = deviceLayout.unusual_placements || [];
+    const coDetection = deviceLayout.co_detection || {};
+    const hasCoDetails = !!(coDetection && (coDetection.needed || coDetection.reason));
+
+    if (!placements.length && !unusual.length && !hasCoDetails) {
+        return null;
+    }
+
+    const { card, content } = createGeminiCard('Device Placement Review', 'full-width');
+
+    if (placements.length > 0) {
+        const heading = document.createElement('h4');
+        heading.textContent = 'Devices with Page References';
+        content.appendChild(heading);
+
+        const list = document.createElement('ul');
+        placements.forEach((placement) => {
+            const li = document.createElement('li');
+            const page = placement.page ?? '?';
+            const device = placement.device_type || placement.device || 'Device';
+            const location = placement.location ? ` at ${placement.location}` : '';
+            const note = placement.placement_note || placement.note;
+            li.textContent = `Pg ${page}: ${device}${location}`;
+            if (note) {
+                const detail = document.createElement('span');
+                detail.className = 'device-note';
+                detail.textContent = ` – ${note}`;
+                li.appendChild(detail);
+            }
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+    }
+
+    if (unusual.length > 0) {
+        const heading = document.createElement('h4');
+        heading.textContent = 'Unusual Placements & Reasons';
+        content.appendChild(heading);
+        const list = document.createElement('ul');
+        unusual.forEach((item) => {
+            const li = document.createElement('li');
+            const page = item.page ?? '?';
+            const device = item.device_type || 'Device';
+            const placement = item.placement ? ` – ${item.placement}` : '';
+            const reason = item.reason || item.impact;
+            li.textContent = `Pg ${page}: ${device}${placement}`;
+            if (reason) {
+                const detail = document.createElement('span');
+                detail.className = 'device-note';
+                detail.textContent = ` (${reason})`;
+                li.appendChild(detail);
+            }
+            list.appendChild(li);
+        });
+        content.appendChild(list);
+    }
+
+    if (coDetection && (coDetection.needed || coDetection.reason)) {
+        const co = document.createElement('p');
+        const needed = coDetection.needed || 'Unknown';
+        const reason = coDetection.reason ? ` – ${coDetection.reason}` : '';
+        co.textContent = `CO Detection: ${needed}${reason}`;
+        content.appendChild(co);
+    }
+
+    const helper = document.createElement('p');
+    helper.className = 'card-helper';
+    helper.textContent = 'Pages where devices are shown, any atypical placements, and CO monitoring expectations.';
     content.appendChild(helper);
 
     return card;

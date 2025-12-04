@@ -158,6 +158,53 @@ def build_gemini_report(results: Dict[str, Any]) -> BytesIO:
             "Gemini did not identify duct detectors or fire/smoke dampers tied into the fire alarm system."
         )
 
+    # Device placement review
+    device_layout = results.get("device_layout_review") or {}
+    document.add_heading("Device Placement Review", level=1)
+    placements = device_layout.get("device_locations") or []
+    unusual = device_layout.get("unusual_placements") or []
+    co_detection = device_layout.get("co_detection") or {}
+
+    if placements:
+        document.add_paragraph("Devices noted on the plans with page references:")
+        for placement in placements:
+            page = _format_page_label(placement.get("page"))
+            label = placement.get("device_type") or placement.get("device") or "Device"
+            location = placement.get("location")
+            note = placement.get("placement_note") or placement.get("note")
+            parts = [page, label]
+            if location:
+                parts.append(f"at {location}")
+            if note:
+                parts.append(str(note))
+            document.add_paragraph(" | ".join(filter(None, parts)), style="List Bullet")
+
+    if unusual:
+        document.add_paragraph("Unusual placements or explanations:")
+        for item in unusual:
+            page = _format_page_label(item.get("page"))
+            label = item.get("device_type") or "Device"
+            placement = item.get("placement")
+            reason = item.get("reason") or item.get("impact")
+            text = f"{page} | {label}"
+            if placement:
+                text += f" – {placement}"
+            if reason:
+                text += f" ({reason})"
+            document.add_paragraph(text, style="List Bullet")
+
+    if co_detection:
+        co_needed = co_detection.get("needed")
+        co_reason = co_detection.get("reason")
+        paragraph = document.add_paragraph()
+        paragraph.add_run("CO Detection: ").bold = True
+        co_text = co_needed or "Unknown"
+        if co_reason:
+            co_text += f" – {co_reason}"
+        paragraph.add_run(co_text)
+    elif not (placements or unusual):
+        document.add_paragraph("No specific device placement details were captured.")
+
     # Specifications & manufacturers
     document.add_heading("Fire Alarm Specifications", level=1)
     specifications = results.get("specifications") or {}
