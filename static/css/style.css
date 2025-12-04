@@ -37,6 +37,25 @@ body {
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
+.app-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 24px;
+    align-items: start;
+}
+
+.sidebar {
+    position: sticky;
+    top: 20px;
+    align-self: start;
+}
+
+.main-content {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
 h1 {
     text-align: center;
     color: #ff6b6b;
@@ -68,13 +87,14 @@ h1 {
     border: 1px solid #2f2f2f;
     border-radius: 12px;
     padding: 18px;
-    margin-bottom: 24px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
 }
 
 .history-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
     margin-bottom: 12px;
@@ -96,8 +116,8 @@ h1 {
 }
 
 .history-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 12px;
 }
 
@@ -187,6 +207,25 @@ h1 {
 .history-subtle {
     color: #9c9c9c;
     font-size: 0.9rem;
+}
+
+@media (max-width: 1100px) {
+    .app-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: static;
+    }
+
+    .history-panel {
+        max-height: none;
+    }
+
+    .history-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
 }
 
 .status-item {
@@ -819,7 +858,7 @@ h1 {
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
     border-radius: 10px;
     padding: 12px;
-    width: 320px;
+    width: 360px;
     pointer-events: none;
     z-index: 1000;
     transition: opacity 0.15s ease;
@@ -828,7 +867,7 @@ h1 {
 
 .page-hover-preview img {
     width: 100%;
-    height: 360px;
+    height: 420px;
     object-fit: contain;
     border-radius: 6px;
     background: #111;
