@@ -14,6 +14,7 @@ from datetime import datetime
 
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
+from google.api_core import exceptions as core_exceptions
 from PIL import Image
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
@@ -308,6 +309,20 @@ class GeminiFireAlarmAnalyzer:
                 break
             except Exception as exc:  # pragma: no cover - relies on remote API
                 last_error = exc
+
+                if isinstance(exc, (core_exceptions.PermissionDenied, core_exceptions.Forbidden)) or (
+                    hasattr(exc, "code") and getattr(exc, "code") == 403
+                ):
+                    permission_msg = (
+                        "Gemini API returned 403 (permission denied). Check your API key, "
+                        "Google Cloud project access, and that the Gemini model is enabled for this project."
+                    )
+                    logger.error(permission_msg)
+                    self.initialization_error = permission_msg
+                    self.model = None
+                    last_error = permission_msg
+                    break
+
                 logger.warning(
                     "Gemini request failed (attempt %s/%s): %s",
                     attempt,
