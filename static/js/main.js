@@ -3,6 +3,9 @@ const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const fileName = document.getElementById('fileName');
 const fileError = document.getElementById('fileError');
+const specDropZone = document.getElementById('specDropZone');
+const specFileInput = document.getElementById('specFileInput');
+const specFileName = document.getElementById('specFileName');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const pageSelection = document.getElementById('pageSelection');
 const confidenceSlider = document.getElementById('confidence');
@@ -78,6 +81,7 @@ const DEVICE_NAME_MAP = {
 };
 
 let selectedFile = null;
+let selectedSpecFile = null;
 let currentJobId = null;
 let geminiConfigured = false;
 let currentGeminiJobId = null;
@@ -148,8 +152,34 @@ function setupUploadInteractions() {
         });
     }
 
+    if (specDropZone && specFileInput) {
+        specDropZone.addEventListener('click', () => specFileInput.click());
+        specDropZone.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                specFileInput.click();
+            }
+        });
+        specDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            specDropZone.classList.add('drag-over');
+        });
+        specDropZone.addEventListener('dragleave', () => {
+            specDropZone.classList.remove('drag-over');
+        });
+        specDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            specDropZone.classList.remove('drag-over');
+            handleSpecFiles(e.dataTransfer.files);
+        });
+    }
+
     if (fileInput) {
         fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    }
+
+    if (specFileInput) {
+        specFileInput.addEventListener('change', (e) => handleSpecFiles(e.target.files));
     }
 
     if (analyzeBtn) {
@@ -356,6 +386,42 @@ function handleFiles(files) {
     hideDetectionResults();
 
     generatePagePreviews(file);
+}
+
+function handleSpecFiles(files) {
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const fileNameLower = (file.name || '').toLowerCase();
+    const isPdf = (file.type && file.type.toLowerCase().includes('pdf')) || fileNameLower.endsWith('.pdf');
+
+    if (!isPdf) {
+        setCopyStatus('Spec book must be a PDF file.', 'error');
+        return;
+    }
+
+    if (file.size > 500 * 1024 * 1024) {
+        setCopyStatus('Spec book must be less than 500MB.', 'error');
+        return;
+    }
+
+    selectedSpecFile = file;
+
+    if (specFileInput && specFileInput.files && specFileInput.files[0] !== file) {
+        try {
+            if (window.DataTransfer) {
+                const dataTransfer = new DataTransfer();
+                dataTransfer.items.add(file);
+                specFileInput.files = dataTransfer.files;
+            }
+        } catch (err) {
+            specFileInput.value = '';
+        }
+    }
+
+    if (specFileName) {
+        specFileName.textContent = `Spec book attached: ${file.name}`;
+    }
 }
 
 function showError(message) {
@@ -897,6 +963,10 @@ function startAnalysis(type) {
         endpoint = '/api/analyze_gemini';
         const sendGeminiImages = sendGeminiImagesCheckbox ? sendGeminiImagesCheckbox.checked : false;
         formData.append('send_images', sendGeminiImages);
+        const specFile = selectedSpecFile || (specFileInput ? specFileInput.files[0] : null);
+        if (specFile) {
+            formData.append('spec_pdf', specFile);
+        }
     }
 
     fetch(endpoint, {
