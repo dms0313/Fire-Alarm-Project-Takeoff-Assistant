@@ -213,14 +213,23 @@ def register_analysis_routes(app, analyzer):
         temp_dir = tempfile.mkdtemp()
         pdf_path = os.path.join(temp_dir, 'upload.pdf')
         pdf_file.save(pdf_path)
-        
+        spec_path = None
+        spec_file = request.files.get('spec_pdf')
+        if spec_file and spec_file.filename:
+            spec_path = os.path.join(temp_dir, 'spec.pdf')
+            spec_file.save(spec_path)
+
         try:
             logger.info(f"Starting Gemini analysis job {job_id}")
             
             # =================================================================
             # UPDATED CALL: Pass the pdf_path directly to the new analyzer
             # The new analyzer handles its own text extraction.
-            results = analyzer.gemini_analyzer.analyze_pdf(pdf_path, include_images=send_images)
+            results = analyzer.gemini_analyzer.analyze_pdf(
+                pdf_path,
+                include_images=send_images,
+                spec_pdf_path=spec_path,
+            )
             results['job_id'] = job_id
             # =================================================================
 
@@ -232,6 +241,7 @@ def register_analysis_routes(app, analyzer):
                     'results': results,
                     'pdf_path': pdf_path,
                     'temp_dir': temp_dir,
+                    'spec_pdf_path': spec_path,
                     'timestamp': datetime.now().isoformat(),
                     'analysis_type': 'gemini'
                 }
@@ -254,6 +264,8 @@ def register_analysis_routes(app, analyzer):
             logger.error(f"Error in Gemini analysis: {str(e)}", exc_info=True)
             if os.path.exists(pdf_path):
                 os.remove(pdf_path)
+            if spec_path and os.path.exists(spec_path):
+                os.remove(spec_path)
             if os.path.exists(temp_dir):
                 os.rmdir(temp_dir)
             return jsonify({'success': False, 'error': str(e)}), 500
