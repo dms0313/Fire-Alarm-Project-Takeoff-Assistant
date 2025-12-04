@@ -898,7 +898,18 @@ class GeminiFireAlarmAnalyzer:
             default={'duct_detectors': [], 'dampers': []}
         )
 
-        # Step 7: Extract specifications
+        # Step 7: Review device placement and CO detection
+        logger.info("Reviewing device placement and CO detection needs...")
+        device_layout_review = safe_step(
+            self._review_device_layout,
+            focused_pages,
+            fa_pages,
+            image_payload,
+            image_pages,
+            default={},
+        )
+
+        # Step 8: Extract specifications
         logger.info("Extracting specifications...")
         specifications = safe_step(
             self._extract_specifications,
@@ -917,6 +928,7 @@ class GeminiFireAlarmAnalyzer:
             codes,
             specifications,
             fa_notes,
+            device_layout_review,
         )
 
         structured_summary = self._build_structured_summary(
@@ -925,6 +937,7 @@ class GeminiFireAlarmAnalyzer:
             codes,
             fa_notes,
             mechanical_devices,
+            device_layout_review,
         )
 
         results = {
@@ -936,6 +949,7 @@ class GeminiFireAlarmAnalyzer:
             'fire_alarm_pages': fa_pages,
             'fire_alarm_notes': fa_notes,
             'mechanical_devices': mechanical_devices,
+            'device_layout_review': device_layout_review,
             'specifications': specifications,
             'spec_book_context': None,
             'structured_summary': structured_summary,
@@ -998,6 +1012,103 @@ class GeminiFireAlarmAnalyzer:
                 'error': str(e),
                 'prompt_feedback': self.last_prompt_feedback
             }
+
+    def answer_follow_up_question(
+        self,
+        question: str,
+        prior_results: Optional[Dict[str, Any]] = None,
+        pdf_path: Optional[str] = None,
+        spec_pdf_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Use Gemini to answer follow-up questions with project context."""
+
+        if not self.model:
+            return {'success': False, 'error': 'Gemini AI not initialized. Check API key.'}
+
+        if not question or not question.strip():
+            return {'success': False, 'error': 'A follow-up question is required.'}
+
+        context_blocks: List[str] = []
+
+        if prior_results:
+            condensed = {
+                'project_info': prior_results.get('project_info'),
+                'high_level_overview': prior_results.get('high_level_overview'),
+                'fire_alarm_briefing': prior_results.get('fire_alarm_briefing'),
+                'specifications': prior_results.get('specifications'),
+                'device_layout_review': prior_results.get('device_layout_review'),
+            }
+            try:
+                context_blocks.append(f"PRIOR GEMINI SUMMARY:\n{json.dumps(condensed, ensure_ascii=False)[:6000]}")
+            except Exception:
+                pass
+
+        if pdf_path:
+            try:
+                pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
+                filtered_pages = self._filter_pages_for_gemini(pages_text)
+                excerpt = "\n\n".join(
+                    [
+                        f"PAGE {page.get('page_number')}:\n{page.get('text','')[:1200]}"
+                        for page in filtered_pages[:8]
+                    ]
+                )
+                if excerpt:
+                    context_blocks.append(f"PAGE EXCERPTS:\n{excerpt}")
+            except Exception as exc:
+                logger.error("Failed to build follow-up context from PDF: %s", exc)
+
+        if spec_pdf_path:
+            try:
+                spec_pages = self.pdf_processor.extract_text_from_pdf(spec_pdf_path)
+                spec_sections = self._filter_spec_book_sections(spec_pages)
+                spec_excerpt = self._compile_spec_excerpt(spec_sections, char_limit=4000)
+                if spec_excerpt:
+                    context_blocks.append(f"SPEC EXCERPT:\n{spec_excerpt}")
+            except Exception as exc:
+                logger.error("Failed to build follow-up context from spec: %s", exc)
+
+        context_text = "\n\n".join(context_blocks)
+
+        prompt = f"""You are continuing as the fire alarm estimator AI. Answer the user's follow-up question using the project context.
+
+FOLLOW-UP QUESTION:
+{question.strip()}
+
+CONTEXT:
+{context_text[:16000]}
+
+Expectations:
+- Provide a concise, actionable answer.
+- Cite specific page numbers when referencing device locations or notes.
+- If device placement seems unusual, explain why it may be shown that way.
+- Always state whether CO detection is required, not required, or unclear, and why.
+
+Return JSON with keys: answer (string), referenced_pages (array of ints), co_detection (object with needed + reason), and notes (array of strings for any unusual placements or clarifications).
+"""
+
+        try:
+            response_text = self._generate_model_text(self._add_system_instruction(prompt))
+            if not response_text:
+                return {'success': False, 'error': 'Empty response from Gemini'}
+
+            parsed = self._parse_json(
+                response_text,
+                {
+                    'answer': '',
+                    'referenced_pages': [],
+                    'co_detection': {'needed': None, 'reason': None},
+                    'notes': [],
+                },
+            )
+            return {'success': True, 'response': parsed}
+        except GeminiPromptBlocked as exc:
+            return {'success': False, 'error': str(exc), 'prompt_feedback': self._format_prompt_feedback(exc.prompt_feedback)}
+        except GeminiRequestFailed as exc:
+            return {'success': False, 'error': str(exc), 'prompt_feedback': self.last_prompt_feedback}
+        except Exception as exc:
+            logger.error("Follow-up question failed: %s", exc, exc_info=True)
+            return {'success': False, 'error': str(exc)}
 
     def analyze_pdf(
         self,
@@ -1371,7 +1482,61 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
         except Exception as e:
             logger.error(f"Error extracting mechanical devices: {str(e)}")
             return {'duct_detectors': [], 'dampers': [], 'error': str(e)}
-    
+
+    def _review_device_layout(
+        self,
+        pages_text: List[Dict[str, Any]],
+        fa_pages: List[int],
+        image_payload: Optional[List[Dict[str, Any]]] = None,
+        image_pages: Optional[List[int]] = None,
+    ) -> Dict[str, Any]:
+        """Review device placement, page numbers, and CO detection needs."""
+
+        fa_text = "\n\n".join(
+            [f"PAGE {p['page_number']}:\n{p['text']}" for p in pages_text if p.get('page_number') in fa_pages]
+        )
+
+        if not fa_text:
+            return {}
+
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
+        prompt = f"""Review these fire alarm/electrical pages. Identify where devices are called out and flag unusual placements.
+
+PAGES TEXT:
+{fa_text[:16000]}
+
+{image_note}
+
+Extract the following and ALWAYS provide page numbers where available:
+1) DEVICE LOCATIONS: List devices called out on the drawings with their page number, device type, location/room, and any placement note.
+2) UNUSUAL PLACEMENTS: If devices appear in atypical locations (e.g., notification appliance inside mechanical room, detector outdoors), capture the placement and the stated reason or probable intent.
+3) CO DETECTION CHECK: State whether carbon monoxide detection is required or explicitly not required, and why (e.g., fuel-burning equipment, parking garage, or explicit note).
+
+Return JSON with:
+{{
+  "device_locations": [{{"page": 1, "device_type": "Smoke Detector", "location": "Lobby", "placement_note": "ceiling near elevator"}}],
+  "unusual_placements": [{{"page": 2, "device_type": "Strobe", "placement": "Mechanical room", "reason": "Owner request for internal alarm"}}],
+  "co_detection": {{"needed": "Yes/No/Unknown", "reason": "why"}}
+}}
+"""
+
+        try:
+            response_text = self._generate_model_text(prompt, images=image_payload)
+            if not response_text:
+                return {}
+            return self._parse_json(
+                response_text,
+                {'device_locations': [], 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': None}},
+            )
+        except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
+            raise
+        except Exception as exc:
+            logger.error("Error during device layout review: %s", exc)
+            return {'device_locations': [], 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': str(exc)}}
+
     def _extract_specifications(
         self,
         pages_text: List[Dict],
@@ -1472,6 +1637,7 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         codes: Dict[str, Any],
         specifications: Dict[str, Any],
         fire_alarm_notes: List[Dict[str, Any]],
+        device_layout_review: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Compile key requirements and notes for the fire alarm scope."""
 
@@ -1494,6 +1660,13 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         codes_list = []
         if isinstance(codes, dict) and isinstance(codes.get('fire_alarm_codes'), list):
             codes_list = codes['fire_alarm_codes']
+
+        co_detection = (device_layout_review or {}).get('co_detection') or {}
+        if co_detection.get('needed'):
+            co_note = f"CO detection: {co_detection.get('needed')}"
+            if co_detection.get('reason'):
+                co_note += f" ({co_detection['reason']})"
+            requirement_items.append(co_note)
 
 
         return {
@@ -1530,6 +1703,7 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         codes: Dict[str, Any],
         fire_alarm_notes: List[Dict[str, Any]],
         mechanical_devices: Dict[str, List[Dict[str, Any]]],
+        device_layout_review: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a structured summary with pitfalls and estimator notes."""
 
@@ -1656,6 +1830,54 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
                 }
             )
 
+        # Device layout review (locations, unusual placements, CO detection)
+        if device_layout_review:
+            layout_bullets: List[str] = []
+
+            for placement in device_layout_review.get('device_locations', []) or []:
+                device_label = placement.get('device_type') or placement.get('device') or 'Device'
+                page = placement.get('page')
+                location = placement.get('location')
+                note = placement.get('placement_note') or placement.get('note')
+                parts = [device_label]
+                if location:
+                    parts.append(f"at {location}")
+                if note:
+                    parts.append(str(note))
+                prefix = f"Page {page}: " if page is not None else ""
+                layout_bullets.append(prefix + " - ".join(parts))
+
+            for unusual in device_layout_review.get('unusual_placements', []) or []:
+                page = unusual.get('page')
+                device_label = unusual.get('device_type') or 'Device'
+                placement = unusual.get('placement')
+                reason = unusual.get('reason') or unusual.get('impact')
+                prefix = f"Page {page}: " if page is not None else ""
+                parts = [f"Unusual placement for {device_label}"]
+                if placement:
+                    parts.append(str(placement))
+                if reason:
+                    parts.append(str(reason))
+                layout_bullets.append(prefix + " - ".join(parts))
+
+            co_detection = device_layout_review.get('co_detection') or {}
+            co_needed = co_detection.get('needed')
+            co_reason = co_detection.get('reason')
+            if co_needed:
+                text = f"CO detection needed: {co_needed}"
+                if co_reason:
+                    text += f" ({co_reason})"
+                layout_bullets.append(text)
+
+            if layout_bullets:
+                section_list.append(
+                    {
+                        'title': 'Device Placement Review',
+                        'bullets': layout_bullets,
+                        'summary': 'Where devices are called out, unusual placements, and CO monitoring needs.',
+                    }
+                )
+
         # Pitfalls and gaps
         add_pitfall('Fire alarm / life safety codes not cited—confirm editions with AHJ.' if not fire_codes else None)
         add_pitfall(
@@ -1668,6 +1890,12 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             if not project_info.get('sprinkler_status')
             else None
         )
+
+        co_detection = (device_layout_review or {}).get('co_detection') or {}
+        if not co_detection.get('needed'):
+            add_pitfall('CO detection requirement not stated—confirm if CO monitoring is required.')
+        elif str(co_detection.get('needed')).lower() in {'unknown', 'unsure'}:
+            add_pitfall('CO detection need is unclear—verify with mechanical plans and code path.')
 
         for label, message in [
             ('SYSTEM_TYPE', 'System type (addressable vs. conventional) not specified.'),
