@@ -915,6 +915,14 @@ class GeminiFireAlarmAnalyzer:
             fa_notes,
         )
 
+        structured_summary = self._build_structured_summary(
+            project_info,
+            specifications,
+            codes,
+            fa_notes,
+            mechanical_devices,
+        )
+
         results = {
             'success': True,
             'project_info': project_info,
@@ -926,7 +934,7 @@ class GeminiFireAlarmAnalyzer:
             'mechanical_devices': mechanical_devices,
             'specifications': specifications,
             'spec_book_context': None,
-            'structured_summary': {},
+            'structured_summary': structured_summary,
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat()
         }
@@ -1504,4 +1512,188 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             return specifications[upper]
 
         return None
+
+    def _build_structured_summary(
+        self,
+        project_info: Dict[str, Any],
+        specifications: Dict[str, Any],
+        codes: Dict[str, Any],
+        fire_alarm_notes: List[Dict[str, Any]],
+        mechanical_devices: Dict[str, List[Dict[str, Any]]],
+    ) -> Dict[str, Any]:
+        """Create a structured summary with pitfalls and estimator notes."""
+
+        section_list: List[Dict[str, Any]] = []
+        pitfalls: List[str] = []
+        estimating_notes: List[str] = []
+
+        def add_pitfall(message: Optional[str]):
+            if message and message.strip():
+                pitfalls.append(message.strip())
+
+        def add_estimator_note(message: Optional[str]):
+            if message and message.strip():
+                estimating_notes.append(message.strip())
+
+        # Project snapshot section
+        overview_bullets = []
+        if project_info.get('project_type'):
+            overview_bullets.append(f"Type: {project_info['project_type']}")
+        if project_info.get('project_address') or project_info.get('project_location'):
+            overview_bullets.append(
+                f"Location: {project_info.get('project_address') or project_info.get('project_location')}"
+            )
+        if project_info.get('scope_summary'):
+            overview_bullets.append(f"Scope: {project_info['scope_summary']}")
+        if project_info.get('project_number'):
+            overview_bullets.append(f"Project # {project_info['project_number']}")
+
+        if overview_bullets:
+            section_list.append(
+                {
+                    'title': 'Project Snapshot',
+                    'bullets': overview_bullets,
+                    'summary': project_info.get('scope_summary'),
+                }
+            )
+
+        # Specification highlights
+        spec_bullets = []
+        for label in [
+            'CONTROL_PANEL',
+            'SYSTEM_TYPE',
+            'COMMUNICATION',
+            'MONITORING',
+            'AUDIO_SYSTEM',
+            'APPROVED_MANUFACTURERS',
+        ]:
+            value = self._get_spec_value(specifications, label)
+            if value:
+                pretty = label.replace('_', ' ').title()
+                spec_bullets.append(f"{pretty}: {value}")
+
+        if spec_bullets:
+            section_list.append(
+                {
+                    'title': 'Specifications',
+                    'bullets': spec_bullets,
+                    'summary': 'Key fire alarm specification calls.',
+                }
+            )
+
+        # Codes
+        fire_codes = []
+        if isinstance(codes, dict) and isinstance(codes.get('fire_alarm_codes'), list):
+            fire_codes = codes.get('fire_alarm_codes') or []
+
+        if fire_codes:
+            section_list.append(
+                {
+                    'title': 'Fire Alarm Codes',
+                    'bullets': fire_codes,
+                    'summary': 'Codes and editions cited for the fire alarm scope.',
+                }
+            )
+
+        # Fire alarm notes
+        if fire_alarm_notes:
+            note_bullets = []
+            for note in fire_alarm_notes:
+                page = note.get('page')
+                content = note.get('content')
+                note_type = note.get('note_type')
+                if content:
+                    prefix = f"Page {page}: " if page is not None else ""
+                    label = f"[{note_type}] " if note_type else ""
+                    note_bullets.append(f"{prefix}{label}{content}")
+
+            if note_bullets:
+                section_list.append(
+                    {
+                        'title': 'Fire Alarm Notes',
+                        'bullets': note_bullets,
+                        'summary': 'Project-specific fire alarm notes pulled from the drawings.',
+                    }
+                )
+
+        # Mechanical devices
+        mech_bullets = []
+        for device_type, devices in (mechanical_devices or {}).items():
+            if not isinstance(devices, list):
+                continue
+            for device in devices:
+                label = device.get('device_type') or device.get('type') or device_type
+                location = device.get('location')
+                qty = device.get('quantity')
+                details = device.get('specifications') or device.get('specs')
+
+                parts = [label]
+                if location:
+                    parts.append(f"at {location}")
+                if qty:
+                    parts.append(f"qty: {qty}")
+                if details:
+                    parts.append(str(details))
+
+                mech_bullets.append(" - ".join(parts))
+
+        if mech_bullets:
+            section_list.append(
+                {
+                    'title': 'Mechanical-Linked Devices',
+                    'bullets': mech_bullets,
+                    'summary': 'Duct detectors and fire/smoke dampers that need FA integration.',
+                }
+            )
+
+        # Pitfalls and gaps
+        add_pitfall('Fire alarm / life safety codes not cited—confirm editions with AHJ.' if not fire_codes else None)
+        add_pitfall(
+            'Fire alarm required status not stated—confirm with project documents.'
+            if not project_info.get('fire_alarm_required')
+            else None
+        )
+        add_pitfall(
+            'Sprinkler monitoring expectations unclear—verify whether system is sprinkled.'
+            if not project_info.get('sprinkler_status')
+            else None
+        )
+
+        for label, message in [
+            ('SYSTEM_TYPE', 'System type (addressable vs. conventional) not specified.'),
+            ('COMMUNICATION', 'Communication path not defined (cellular/phone/network).'),
+            ('MONITORING', 'Central station monitoring requirements not documented.'),
+            ('AUDIO_SYSTEM', 'Voice evacuation or audio requirement is unclear.'),
+            (
+                'APPROVED_MANUFACTURERS',
+                'Approved manufacturers list missing—spec may be open or needs confirmation.',
+            ),
+        ]:
+            if not self._get_spec_value(specifications, label):
+                add_pitfall(message)
+
+        # Control panel and existing systems
+        control_panel = self._get_spec_value(specifications, 'CONTROL_PANEL')
+        if not control_panel:
+            add_pitfall('Control panel manufacturer/model not identified—verify if existing panel to remain.')
+
+        if not fire_alarm_notes:
+            add_estimator_note('No project-specific fire alarm notes captured—check drawings for keyed notes.')
+
+        if mech_bullets:
+            add_estimator_note('Coordinate duct detectors and dampers with mechanical contractor for relay points.')
+        else:
+            add_pitfall('Mechanical integration devices (duct detectors/dampers) not found—confirm if required.')
+
+        # Aggregate estimating notes
+        estimating_notes.extend(pitfalls)
+
+        sections_obj = {'estimating_notes': estimating_notes}
+
+        return {
+            'project_summary': project_info.get('scope_summary') or project_info.get('project_type'),
+            'section_list': section_list,
+            'pitfalls': pitfalls,
+            'sections': sections_obj,
+        }
 
