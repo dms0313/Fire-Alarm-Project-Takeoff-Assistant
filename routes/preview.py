@@ -93,18 +93,30 @@ def register_preview_routes(app, analyzer):
             pages = []
             for page_num in range(len(doc)):
                 page = doc[page_num]
-                mat = fitz.Matrix(150 / 72, 150 / 72)
+
+                # Generate a higher resolution preview for hover/zoom
+                mat = fitz.Matrix(220 / 72, 220 / 72)
                 pix = page.get_pixmap(matrix=mat)
 
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                img.thumbnail((300, 300))
+                base_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
-                buffered = io.BytesIO()
-                img.save(buffered, format="JPEG", quality=85)
-                img_str = base64.b64encode(buffered.getvalue()).decode()
+                thumbnail_image = base_image.copy()
+                thumbnail_image.thumbnail((320, 320))
+
+                preview_image = base_image.copy()
+                preview_image.thumbnail((900, 900))
+
+                thumb_buffer = io.BytesIO()
+                thumbnail_image.save(thumb_buffer, format="JPEG", quality=88)
+                thumbnail_b64 = base64.b64encode(thumb_buffer.getvalue()).decode()
+
+                preview_buffer = io.BytesIO()
+                preview_image.save(preview_buffer, format="JPEG", quality=92)
+                preview_b64 = base64.b64encode(preview_buffer.getvalue()).decode()
 
                 pages.append({
-                    'thumbnail': f'data:image/jpeg;base64,{img_str}',
+                    'thumbnail': f'data:image/jpeg;base64,{thumbnail_b64}',
+                    'preview': f'data:image/jpeg;base64,{preview_b64}',
                     'page_number': page_num + 1
                 })
 

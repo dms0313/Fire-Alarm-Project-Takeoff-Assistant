@@ -118,7 +118,7 @@ DocumentReady(() => {
     setupModelSelector();
     setupFollowUp();
     setPageSelectionCollapsed(true);
-    setHistoryCollapsed(true);
+    setHistoryCollapsed(false);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -323,7 +323,7 @@ function updatePageHoverMagnifier(event) {
         pageHoverLens.style.left = `${lensLeft}px`;
         pageHoverLens.style.top = `${lensTop}px`;
         pageHoverLens.style.backgroundImage = `url(${pageHoverImage.src})`;
-        pageHoverLens.style.backgroundSize = '220%';
+        pageHoverLens.style.backgroundSize = '260%';
         pageHoverLens.style.backgroundPosition = `${relativeX}% ${relativeY}%`;
         pageHoverLens.classList.remove('hidden');
         pageHoverLens.setAttribute('aria-hidden', 'false');
@@ -335,7 +335,8 @@ function showPageHoverPreview(page, event) {
         return;
     }
 
-    pageHoverImage.src = page.thumbnail;
+    const previewSrc = page.preview || page.thumbnail;
+    pageHoverImage.src = previewSrc;
     pageHoverImage.alt = `Zoomed preview of page ${page.page_number}`;
     pageHoverLabel.textContent = `Page ${page.page_number}`;
     pageHoverPreview.classList.remove('hidden');
@@ -2343,6 +2344,36 @@ function serializeStructuredSummary(structuredSummary = {}) {
     return lines.filter((line, index, arr) => line !== '' || (index > 0 && arr[index - 1] !== '')).join('\n');
 }
 
+function serializeStructuredSummaryMarkdown(structuredSummary = {}) {
+    if (!structuredSummary || typeof structuredSummary !== 'object') {
+        return '';
+    }
+
+    const lines = [];
+    const summaryText =
+        structuredSummary.project_summary ||
+        structuredSummary.summary ||
+        structuredSummary.overview ||
+        structuredSummary.scope_summary;
+
+    if (summaryText) {
+        lines.push(`- ${summaryText}`);
+    }
+
+    const sections = getSectionsArray(structuredSummary);
+    appendMarkdownSections(sections, lines);
+
+    const pitfalls = extractPitfallItems(structuredSummary);
+    if (pitfalls.length > 0) {
+        lines.push('', '- **Possible Pitfalls / Things to Consider:**');
+        pitfalls.forEach((pitfall) => {
+            lines.push(`  - ${pitfall}`);
+        });
+    }
+
+    return lines.filter((line, index, arr) => line !== '' || (index > 0 && arr[index - 1] !== '')).join('\n');
+}
+
 function appendSectionsToLines(sections = [], lines = [], parentNumber = '') {
     if (!Array.isArray(sections) || sections.length === 0) {
         return;
@@ -2372,6 +2403,40 @@ function appendSectionsToLines(sections = [], lines = [], parentNumber = '') {
 
         const subsectionCandidates = section.subsections || section.sections || section.children;
         appendSectionsToLines(subsectionCandidates, lines, sectionNumber);
+    });
+}
+
+function appendMarkdownSections(sections = [], lines = [], depth = 0, parentNumber = '') {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return;
+    }
+
+    sections.forEach((section, index) => {
+        if (!section) {
+            return;
+        }
+
+        const sectionNumber =
+            section.number ||
+            section.section_number ||
+            section.index ||
+            (parentNumber ? `${parentNumber}.${index + 1}` : `${index + 1}`);
+        const titleText = section.title || section.heading || section.name || `Section ${sectionNumber}`;
+        const sectionSummary = section.summary || section.description || section.text || section.detail || '';
+        const label = sectionNumber ? `${sectionNumber}. ${titleText}` : titleText;
+        const indent = '  '.repeat(depth);
+        const headerLine = sectionSummary
+            ? `${indent}- **${label}** — ${sectionSummary}`
+            : `${indent}- **${label}**`;
+        lines.push(headerLine.trim());
+
+        const bulletSource = getSectionBulletSource(section);
+        flattenStructuredItems(bulletSource).forEach((item) => {
+            lines.push(`${indent}  - ${item}`);
+        });
+
+        const subsectionCandidates = section.subsections || section.sections || section.children;
+        appendMarkdownSections(subsectionCandidates, lines, depth + 1, sectionNumber);
     });
 }
 
@@ -2778,7 +2843,7 @@ function fallbackCopyToClipboard(text, onSuccess, onError) {
 }
 
 function buildCopyableSectionsText(data = {}) {
-    const lines = [];
+    const lines = ['# Fire Alarm Takeoff Summary'];
     const overview = {
         ...(data.project_info || {}),
         ...(data.high_level_overview || {}),
@@ -2793,24 +2858,32 @@ function buildCopyableSectionsText(data = {}) {
     appendFormattedLine('Scope', overview.scope_summary, overviewLines);
 
     if (overviewLines.length > 0) {
-        lines.push('Project Snapshot:');
-        lines.push(...overviewLines.map((line) => `- ${line}`));
+        lines.push('', '## Project Snapshot', ...overviewLines.map((line) => `- ${line}`));
     }
 
     const structuredSummary = data.structured_summary || {};
-    const serializedSummary = serializeStructuredSummary(structuredSummary);
+    const serializedSummary = serializeStructuredSummaryMarkdown(structuredSummary);
     if (serializedSummary) {
-        lines.push('', 'AI Structured Summary:', serializedSummary);
+        lines.push('', '## AI Structured Summary', serializedSummary);
     }
 
     const conflicts = collectConflictSignals(structuredSummary);
     const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
     const advisories = collectAdvisoryNotes(structuredSummary);
     if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
-        lines.push('', 'Conflicts / Pitfalls / Advice:');
-        conflicts.forEach((item, index) => lines.push(`C${index + 1}. ${item}`));
-        pitfalls.forEach((item, index) => lines.push(`P${index + 1}. ${item}`));
-        advisories.forEach((item, index) => lines.push(`A${index + 1}. ${item}`));
+        lines.push('', '## Conflicts, Pitfalls & Advice');
+        if (conflicts.length > 0) {
+            lines.push('- **Conflicts:**');
+            conflicts.forEach((item) => lines.push(`  - ${item}`));
+        }
+        if (pitfalls.length > 0) {
+            lines.push('- **Pitfalls:**');
+            pitfalls.forEach((item) => lines.push(`  - ${item}`));
+        }
+        if (advisories.length > 0) {
+            lines.push('- **Advisories:**');
+            advisories.forEach((item) => lines.push(`  - ${item}`));
+        }
     }
 
     if (data.analysis_timestamp) {
@@ -2827,7 +2900,7 @@ function appendFormattedLine(label, value, lines = []) {
     }
     const normalized = normalizeStructuredText(value);
     if (normalized) {
-        lines.push(`${label}: ${normalized}`);
+        lines.push(`**${label}:** ${normalized}`);
     }
 }
 
