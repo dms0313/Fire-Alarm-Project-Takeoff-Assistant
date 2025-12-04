@@ -496,6 +496,84 @@ class GeminiFireAlarmAnalyzer:
 
         return filtered_pages
 
+    def _filter_spec_book_sections(
+        self, spec_pages: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Keep only the spec book pages that reference fire alarm scope."""
+
+        if not spec_pages:
+            return []
+
+        division_pattern = re.compile(r"\b28\s*(?:\d{2}|\d{2}\.\d{2}|\d{2}\.\d{2}\.\d{2})")
+        fire_alarm_terms = [
+            "fire alarm",
+            "mass notification",
+            "notification appliance",
+            "initiating device",
+            "voice evacuation",
+            "life safety",
+            "smoke detector",
+            "pull station",
+            "alarm control",
+            "fa system",
+        ]
+
+        filtered: List[Dict[str, Any]] = []
+
+        for page in spec_pages:
+            text = page.get("text", "") or ""
+            lower = text.lower()
+            page_number = page.get("page_number")
+
+            if division_pattern.search(lower) or any(term in lower for term in fire_alarm_terms):
+                filtered.append({
+                    "page_number": page_number,
+                    "text": text,
+                })
+
+        if filtered:
+            logger.info(
+                "Prepared %s spec book pages for Gemini (fire alarm focus): %s",
+                len(filtered),
+                ", ".join(str(p.get("page_number")) for p in filtered[:15]),
+            )
+        else:
+            logger.info("No fire-alarm-related sections found in spec book; skipping upload context.")
+
+        return filtered[:12]
+
+    @staticmethod
+    def _compile_spec_excerpt(
+        spec_sections: Optional[List[Dict[str, Any]]],
+        char_limit: int = 16000,
+    ) -> str:
+        """Create a bounded text block from relevant spec sections."""
+
+        if not spec_sections:
+            return ""
+
+        excerpts: List[str] = []
+        remaining = char_limit
+
+        for section in spec_sections:
+            text = (section.get("text") or "").strip()
+            if not text or remaining <= 0:
+                continue
+
+            snippet = text if len(text) <= remaining else text[:remaining]
+            header = f"[Spec Page {section.get('page_number')}]\n"
+            block = f"{header}{snippet}"
+            if len(block) > remaining:
+                block = block[:remaining]
+
+            excerpts.append(block)
+            remaining -= len(block)
+
+            if remaining <= 0:
+                break
+
+        return "\n\n".join(excerpts)
+
     @staticmethod
     def _image_guidance_text(
         image_payload: Optional[List[Dict[str, Any]]],
@@ -713,6 +791,7 @@ class GeminiFireAlarmAnalyzer:
         pages_text: List[Dict[str, Any]],
         image_payload: Optional[List[Dict[str, Any]]] = None,
         image_pages: Optional[List[int]] = None,
+        spec_sections: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Execute the core Gemini analysis steps once text has been extracted."""
 
@@ -785,6 +864,7 @@ class GeminiFireAlarmAnalyzer:
             fa_pages,
             image_payload,
             image_pages,
+            spec_sections,
             default={},
         )
 
@@ -807,10 +887,18 @@ class GeminiFireAlarmAnalyzer:
             'fire_alarm_notes': fa_notes,
             'mechanical_devices': mechanical_devices,
             'specifications': specifications,
+            'spec_book_context': None,
             'structured_summary': {},
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat()
         }
+
+        if spec_sections:
+            results['spec_book_context'] = {
+                'pages_considered': len(spec_sections),
+                'pages_sent_to_gemini': [page.get('page_number') for page in spec_sections],
+                'source': 'spec_pdf',
+            }
 
         # Even if we had blocks, we return success=True so the UI shows what we DID get
         if self.last_prompt_feedback:
@@ -861,7 +949,12 @@ class GeminiFireAlarmAnalyzer:
                 'prompt_feedback': self.last_prompt_feedback
             }
 
-    def analyze_pdf(self, pdf_path: str, include_images: bool = True) -> Dict[str, Any]:
+    def analyze_pdf(
+        self,
+        pdf_path: str,
+        include_images: bool = True,
+        spec_pdf_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
         """
@@ -877,6 +970,11 @@ class GeminiFireAlarmAnalyzer:
 
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
             filtered_pages = self._filter_pages_for_gemini(pages_text)
+
+            spec_sections: Optional[List[Dict[str, Any]]] = None
+            if spec_pdf_path:
+                spec_pages = self.pdf_processor.extract_text_from_pdf(spec_pdf_path)
+                spec_sections = self._filter_spec_book_sections(spec_pages)
 
             if not filtered_pages:
                 return {
@@ -896,7 +994,12 @@ class GeminiFireAlarmAnalyzer:
                     logger.error(image_error, exc_info=True)
                     image_payload = None
 
-            results = self._run_analysis_pipeline(filtered_pages, image_payload, image_pages)
+            results = self._run_analysis_pipeline(
+                filtered_pages,
+                image_payload,
+                image_pages,
+                spec_sections,
+            )
 
             if include_images:
                 results['image_pages_sent'] = image_pages
@@ -1220,6 +1323,7 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
         fa_pages: List[int],
         image_payload: Optional[List[Dict[str, Any]]] = None,
         image_pages: Optional[List[int]] = None,
+        spec_sections: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """Extract fire alarm system specifications"""
         
@@ -1235,9 +1339,12 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
             if 'general note' in p.get('text', '').lower()
         ])
 
+        spec_text = self._compile_spec_excerpt(spec_sections)
+
         combined_text = "\n\n".join(filter(None, [
             "FIRE ALARM PAGES:\n" + fa_text if fa_text else "",
             "GENERAL NOTES (include these when checking for existing panels):\n" + general_notes_text if general_notes_text else "",
+            "SPEC BOOK FIRE ALARM EXCERPTS:\n" + spec_text if spec_text else "",
         ])).strip()
 
         if not combined_text:
@@ -1245,7 +1352,7 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
 
         image_note = self._image_guidance_text(image_payload, image_pages)
 
-        prompt = f"""Extract fire alarm system specifications from these pages. Always review fire alarm related notes AND any
+        prompt = f"""Extract fire alarm system specifications from these pages and spec book excerpts. Always review fire alarm related notes AND any
 general notes to see if the plans list the manufacturer/model of an existing fire alarm control panel.
 
 SOURCE TEXT:
