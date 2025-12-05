@@ -71,6 +71,8 @@ class GeminiFireAlarmAnalyzer:
         self.initialization_error: Optional[str] = None
         self.last_prompt_feedback: Optional[Dict[str, Any]] = None
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
+        self.request_timeout = int(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
+        self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "8"))
         self.tried_models: List[str] = []
 
         if self.api_key:
@@ -264,7 +266,13 @@ class GeminiFireAlarmAnalyzer:
                 request_content = prompt if not images else [prompt, *images]
                 response = self.model.generate_content(
                     request_content,
-                    request_options={"timeout": 600},
+                    request_options={"timeout": self.request_timeout},
+                    generation_config={
+                        "temperature": 0.2,
+                        "top_p": 0.9,
+                        "max_output_tokens": 1400,
+                        "candidate_count": 1,
+                    },
                     safety_settings={
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -664,7 +672,7 @@ class GeminiFireAlarmAnalyzer:
         ordered_unique = self._unique_page_order([
             *cover_pages,
             *fire_alarm_section_pages,
-        ])
+        ])[: self.max_image_pages]
 
         logger.info(
             "Attaching %s page images to Gemini (cover + fire alarm sections): %s",

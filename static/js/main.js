@@ -102,6 +102,7 @@ let historyCollapsed = true;
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
+const GEMINI_REQUEST_TIMEOUT_MS = 240000; // 4 minutes hard timeout to avoid hanging UI
 const GEMINI_STATUS_STEPS = [
     { threshold: 18, message: 'Extracting text from every page for Gemini...' },
     { threshold: 38, message: 'Reviewing cover sheets for project details...' },
@@ -1095,10 +1096,25 @@ function startAnalysis(type) {
         }
     }
 
-    fetch(endpoint, {
+    const fetchOptions = {
         method: 'POST',
         body: formData,
-    })
+    };
+
+    let geminiAbortController = null;
+    let geminiTimeoutId = null;
+
+    if (type === 'gemini') {
+        geminiAbortController = new AbortController();
+        fetchOptions.signal = geminiAbortController.signal;
+        geminiTimeoutId = setTimeout(() => {
+            if (geminiAbortController) {
+                geminiAbortController.abort();
+            }
+        }, GEMINI_REQUEST_TIMEOUT_MS);
+    }
+
+    fetch(endpoint, fetchOptions)
         .then((response) => response.json())
         .then((data) => {
             if (!data.success) {
@@ -1114,11 +1130,16 @@ function startAnalysis(type) {
         .catch((error) => {
             if (type === 'local') {
                 failProgressAnimation(error.message);
+            } else if (error.name === 'AbortError') {
+                displayGeminiError('Gemini timed out. Try again with fewer attachments or without images.');
             } else {
                 displayGeminiError(error.message);
             }
         })
         .finally(() => {
+            if (geminiTimeoutId) {
+                clearTimeout(geminiTimeoutId);
+            }
             if (type === 'local') {
                 if (analyzeBtn) {
                     analyzeBtn.disabled = false;
