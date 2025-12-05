@@ -362,11 +362,27 @@ class GeminiFireAlarmAnalyzer:
         if isinstance(last_error, GeminiPromptBlocked):
             raise last_error
 
+        fallback_model = self._next_fallback_model()
+        if fallback_model:
+            logger.warning(
+                "Switching to fallback Gemini model %s after repeated failure: %s",
+                fallback_model,
+                last_error,
+            )
+            if self._initialize_model(fallback_model):
+                try:
+                    return self._generate_model_text(prompt, images=images)
+                except GeminiPromptBlocked:
+                    raise
+                except Exception as exc:  # pragma: no cover - remote API
+                    last_error = exc
+
         logger.error(
             "Gemini request failed after %s attempts: %s", self.max_retries, last_error
         )
         raise GeminiRequestFailed(
-            f"Gemini request failed after {self.max_retries} attempts: {last_error}"
+            f"Gemini request failed after {self.max_retries} attempts: {last_error}",
+            getattr(last_error, "prompt_feedback", None),
         )
 
     def _next_fallback_model(self) -> Optional[str]:
