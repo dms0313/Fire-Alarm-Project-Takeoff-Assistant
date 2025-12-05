@@ -6,6 +6,11 @@ const fileError = document.getElementById('fileError');
 const specDropZone = document.getElementById('specDropZone');
 const specFileInput = document.getElementById('specFileInput');
 const specFileName = document.getElementById('specFileName');
+const optionalFilesToggle = document.getElementById('optionalFilesToggle');
+const optionalFilesBody = document.getElementById('optionalFilesBody');
+const addAttachmentBtn = document.getElementById('addAttachmentBtn');
+const additionalFileInput = document.getElementById('additionalFileInput');
+const attachmentList = document.getElementById('attachmentList');
 const analyzeBtn = document.getElementById('analyzeBtn');
 const pageSelection = document.getElementById('pageSelection');
 const confidenceSlider = document.getElementById('confidence');
@@ -86,6 +91,7 @@ const DEVICE_NAME_MAP = {
 
 let selectedFile = null;
 let selectedSpecFile = null;
+let additionalFiles = [];
 let currentJobId = null;
 let geminiConfigured = false;
 let currentGeminiJobId = null;
@@ -186,6 +192,27 @@ function setupUploadInteractions() {
 
     if (specFileInput) {
         specFileInput.addEventListener('change', (e) => handleSpecFiles(e.target.files));
+    }
+
+    if (optionalFilesToggle && optionalFilesBody) {
+        optionalFilesToggle.addEventListener('click', () => toggleOptionalFiles());
+    }
+
+    if (addAttachmentBtn && additionalFileInput) {
+        addAttachmentBtn.addEventListener('click', () => additionalFileInput.click());
+        addAttachmentBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                additionalFileInput.click();
+            }
+        });
+    }
+
+    if (additionalFileInput) {
+        additionalFileInput.addEventListener('change', (e) => {
+            handleAdditionalFiles(e.target.files);
+            additionalFileInput.value = '';
+        });
     }
 
     if (analyzeBtn) {
@@ -364,6 +391,8 @@ function handleFiles(files) {
     }
 
     selectedFile = file;
+    additionalFiles = [];
+    renderAttachmentList();
     currentJobId = null;
 
     if (fileInput && fileInput.files && fileInput.files[0] !== file) {
@@ -429,6 +458,55 @@ function handleSpecFiles(files) {
     if (specFileName) {
         specFileName.textContent = `Spec book attached: ${file.name}`;
     }
+}
+
+function handleAdditionalFiles(files) {
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+        if (file.size > 500 * 1024 * 1024) {
+            setCopyStatus('Additional files must be less than 500MB.', 'error');
+            return;
+        }
+
+        additionalFiles.push(file);
+    });
+
+    renderAttachmentList();
+}
+
+function renderAttachmentList() {
+    if (!attachmentList) return;
+
+    attachmentList.innerHTML = '';
+
+    additionalFiles.forEach((file, index) => {
+        const listItem = document.createElement('li');
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'attachment-name';
+        nameSpan.textContent = file.name;
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'remove-attachment';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', () => {
+            additionalFiles.splice(index, 1);
+            renderAttachmentList();
+        });
+
+        listItem.appendChild(nameSpan);
+        listItem.appendChild(removeButton);
+        attachmentList.appendChild(listItem);
+    });
+}
+
+function toggleOptionalFiles() {
+    if (!optionalFilesBody || !optionalFilesToggle) return;
+
+    const willShow = optionalFilesBody.classList.contains('hidden');
+    optionalFilesBody.classList.toggle('hidden');
+    optionalFilesToggle.setAttribute('aria-expanded', willShow ? 'true' : 'false');
 }
 
 function showError(message) {
@@ -951,6 +1029,12 @@ function handleGeminiModelChange(event) {
 function generatePagePreviews(file) {
     const formData = new FormData();
     formData.append('pdf', file);
+
+    if (additionalFiles && additionalFiles.length > 0) {
+        additionalFiles.forEach((attachment) => {
+            formData.append('additional_files', attachment);
+        });
+    }
 
     if (pageSelection) {
         pageSelection.style.display = 'none';
