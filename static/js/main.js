@@ -1452,9 +1452,6 @@ function displayGeminiResults(data, options = {}) {
     } = data;
 
     const overviewCard = buildHighLevelOverviewCard(highLevelOverview, projectInfo);
-    if (overviewCard) {
-        geminiResultsSection.appendChild(overviewCard);
-    }
 
     const briefingCard = buildFireAlarmBriefingCard(
         fireAlarmBriefing,
@@ -1462,35 +1459,62 @@ function displayGeminiResults(data, options = {}) {
         fireAlarmNotes,
         fireAlarmPages
     );
-    if (briefingCard) {
-        geminiResultsSection.appendChild(briefingCard);
-    }
 
     const mechanicalCard = buildMechanicalRequirementsCard(mechanicalDevices);
-    if (mechanicalCard) {
-        geminiResultsSection.appendChild(mechanicalCard);
-    }
 
     const deviceLayoutCard = buildDeviceLayoutCard(deviceLayoutReview);
-    if (deviceLayoutCard) {
-        geminiResultsSection.appendChild(deviceLayoutCard);
-    }
 
     const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
-    if (pitfallsCard) {
-        geminiResultsSection.appendChild(pitfallsCard);
-    }
 
-    geminiResultsSection.appendChild(buildSummaryCard(totalPages, analysisTimestamp));
+    const summaryCard = buildSummaryCard(totalPages, analysisTimestamp);
 
-    const tableOfContents = buildGeminiTableOfContents();
-    if (tableOfContents) {
-        geminiResultsSection.prepend(tableOfContents);
-    }
+    const cardsInRenderOrder = [
+        overviewCard,
+        briefingCard,
+        mechanicalCard,
+        deviceLayoutCard,
+        pitfallsCard,
+        summaryCard,
+    ].filter(Boolean);
+
+    queueGeminiCardReveal(cardsInRenderOrder);
 
     if (!fromHistory) {
         refreshHistoryList();
     }
+}
+
+function queueGeminiCardReveal(cards = []) {
+    if (!Array.isArray(cards) || !cards.length) {
+        return;
+    }
+
+    let delay = 0;
+    cards.forEach((card) => {
+        stageGeminiCardReveal(card, delay);
+        delay += 180;
+    });
+
+    setTimeout(() => refreshGeminiTableOfContents(), delay + 100);
+}
+
+function stageGeminiCardReveal(card, delayMs = 0) {
+    if (!card || !geminiResultsSection) {
+        return;
+    }
+
+    card.classList.add('gemini-card-pending');
+
+    setTimeout(() => {
+        geminiResultsSection.appendChild(card);
+
+        requestAnimationFrame(() => {
+            card.classList.add('gemini-card-visible');
+            card.classList.remove('gemini-card-pending');
+        });
+
+        refreshGeminiTableOfContents();
+    }, delayMs);
 }
 
 function buildGeminiTableOfContents() {
@@ -1545,6 +1569,24 @@ function buildGeminiTableOfContents() {
 
     container.appendChild(list);
     return container;
+}
+
+function refreshGeminiTableOfContents() {
+    if (!geminiResultsSection) {
+        return;
+    }
+
+    const existingToc = geminiResultsSection.querySelector('.gemini-toc');
+    if (existingToc) {
+        existingToc.remove();
+    }
+
+    const toc = buildGeminiTableOfContents();
+    if (toc) {
+        toc.classList.add('gemini-card-pending');
+        geminiResultsSection.prepend(toc);
+        requestAnimationFrame(() => toc.classList.add('gemini-card-visible'));
+    }
 }
 
 function displayGeminiError(message) {
