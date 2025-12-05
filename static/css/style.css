@@ -401,6 +401,117 @@ h1 {
     text-align: left;
 }
 
+.optional-files {
+    margin-top: 18px;
+    text-align: left;
+}
+
+.add-file-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #f7f7f7;
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size: 1rem;
+}
+
+.add-file-toggle:hover,
+.add-file-toggle:focus-visible {
+    border-color: #4ECDC4;
+    color: #4ECDC4;
+    outline: none;
+}
+
+.add-file-toggle .toggle-icon {
+    display: inline-block;
+    font-size: 1.3rem;
+    line-height: 1;
+}
+
+.optional-files-body {
+    margin-top: 14px;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.15);
+    display: grid;
+    gap: 18px;
+}
+
+.additional-uploads {
+    padding: 16px;
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.additional-uploads-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.add-attachment-btn {
+    background: transparent;
+    color: #4ECDC4;
+    border: 1px solid #4ECDC4;
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-weight: 700;
+}
+
+.add-attachment-btn:hover,
+.add-attachment-btn:focus-visible {
+    background: rgba(78, 205, 196, 0.1);
+    outline: none;
+}
+
+.attachment-list {
+    list-style: none;
+    margin-top: 12px;
+    display: grid;
+    gap: 10px;
+}
+
+.attachment-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.attachment-name {
+    color: #f7f7f7;
+    font-weight: 600;
+}
+
+.remove-attachment {
+    background: transparent;
+    border: none;
+    color: #ff6b6b;
+    cursor: pointer;
+    font-size: 0.95rem;
+    padding: 6px;
+}
+
+.remove-attachment:hover,
+.remove-attachment:focus-visible {
+    color: #ff9999;
+    outline: none;
+}
+
 .spec-upload-header {
     display: flex;
     justify-content: space-between;
