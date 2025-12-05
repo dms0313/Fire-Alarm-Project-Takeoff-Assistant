@@ -1285,6 +1285,25 @@ h1 {
     margin-bottom: 20px;
 }
 
+.gemini-results .gemini-card,
+.gemini-toc {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.35s ease, transform 0.35s ease, box-shadow 0.35s ease;
+}
+
+.gemini-card.gemini-card-pending,
+.gemini-toc.gemini-card-pending {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+}
+
+.gemini-card.gemini-card-visible,
+.gemini-toc.gemini-card-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
 .gemini-toc {
     grid-column: 1 / -1;
     background: #1a1a1a;
