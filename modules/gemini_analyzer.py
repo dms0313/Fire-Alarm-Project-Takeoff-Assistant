@@ -676,29 +676,47 @@ class GeminiFireAlarmAnalyzer:
             "acceptable products",
             "manufacturers",
             "manufacturer list",
+            "approved products",
+            "as manufactured",
+            "manufactured by",
+            "systems as manufactured",
+            "one of the following",
             "notifier",
             "simplex",
+            "simplexgrinnell",
             "gamewell",
+            "gamewell-fci",
             "edwards",
             "est",
             "siemens",
             "fike",
             "potter",
             "fire-lite",
+            "fire lite",
             "kidde",
             "bosch",
             "vigilant",
             "cooper",
+            "wheelock",
             "tyco",
             "johnson controls",
+            "autocall",
+            "mircom",
+            "securiton",
         ]
+        manufacturer_phrase_pattern = re.compile(
+            r"approved\s+(?:manufacturers|products)|acceptable\s+(?:manufacturers|products)|manufactured\s+by|systems\s+as\s+manufactured",
+            re.IGNORECASE,
+        )
 
         sorted_pages = sorted(
             spec_pages,
             key=lambda page: (page.get("page_number") is None, page.get("page_number")),
         )
-        relevant_numbers = set()
         division_numbers = set()
+        candidates: List[Dict[str, Any]] = []
+
+        candidate_by_page: Dict[Any, Dict[str, Any]] = {}
 
         for page in sorted_pages:
             text = page.get("text", "") or ""
@@ -707,18 +725,30 @@ class GeminiFireAlarmAnalyzer:
 
             has_division = bool(division_pattern.search(lower))
             has_fire_alarm = any(term in lower for term in fire_alarm_terms)
-            has_manufacturers = any(term in lower for term in manufacturer_terms)
+            has_manufacturers = manufacturer_phrase_pattern.search(lower) is not None or any(
+                term in lower for term in manufacturer_terms
+            )
 
             if has_division:
                 division_numbers.add(page_number)
-            if has_division or has_fire_alarm or has_manufacturers:
-                relevant_numbers.add(page_number)
+
+            candidate = {
+                "page_number": page_number,
+                "text": text,
+                "has_division": has_division,
+                "has_fire_alarm": has_fire_alarm,
+                "has_manufacturers": has_manufacturers,
+                "adjacent_to_division": False,
+            }
+
+            candidate_by_page[page_number] = candidate
+            candidates.append(candidate)
 
         if division_numbers:
             index_by_page = {
                 page.get("page_number"): idx for idx, page in enumerate(sorted_pages)
             }
-            adjacency_window = 2
+            adjacency_window = 3
             for div_page in division_numbers:
                 idx = index_by_page.get(div_page)
                 if idx is None:
@@ -726,21 +756,44 @@ class GeminiFireAlarmAnalyzer:
                 start = max(0, idx - adjacency_window)
                 end = min(len(sorted_pages) - 1, idx + adjacency_window)
                 for neighbor in sorted_pages[start : end + 1]:
-                    relevant_numbers.add(neighbor.get("page_number"))
+                    neighbor_number = neighbor.get("page_number")
+                    candidate = candidate_by_page.get(neighbor_number)
+                    if candidate:
+                        candidate["adjacent_to_division"] = True
+
+        relevant_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["has_division"]
+            or candidate["has_fire_alarm"]
+            or candidate["has_manufacturers"]
+            or candidate["adjacent_to_division"]
+        ]
+
+        prioritized_candidates = sorted(
+            relevant_candidates,
+            key=lambda candidate: (
+                -int(candidate["has_manufacturers"]),
+                -int(candidate["has_division"]),
+                -int(candidate["has_fire_alarm"]),
+                -int(candidate["adjacent_to_division"]),
+                candidate.get("page_number") is None,
+                candidate.get("page_number") or 0,
+            ),
+        )
 
         filtered: List[Dict[str, Any]] = []
-        max_pages = 18
+        max_pages = 24
 
-        for page in sorted_pages:
-            page_number = page.get("page_number")
-            if page_number not in relevant_numbers:
-                continue
-            filtered.append({
-                "page_number": page_number,
-                "text": page.get("text", "") or "",
-            })
+        for candidate in prioritized_candidates:
             if len(filtered) >= max_pages:
                 break
+            filtered.append(
+                {
+                    "page_number": candidate.get("page_number"),
+                    "text": candidate.get("text", "") or "",
+                }
+            )
 
         if filtered:
             logger.info(
