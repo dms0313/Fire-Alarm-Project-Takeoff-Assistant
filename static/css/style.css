@@ -1758,3 +1758,42 @@ h1 {
     border-radius: 6px;
     line-height: 1.4;
 }
+
+.notion-transfer {
+    margin-top: 20px;
+    background: #111b24;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.notion-transfer-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.notion-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+@media (max-width: 768px) {
+    .notion-transfer-body {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .notion-actions {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    #sendToNotionBtn {
+        width: 100%;
+    }
+}

@@ -18,6 +18,7 @@ import config
 from models import FireAlarmDevice, PageAnalysis
 from modules.gemini_report_builder import build_gemini_report
 from modules.history_store import HistoryStore
+from modules.notion_client import NotionClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 analysis_jobs = {}
 analysis_lock = threading.Lock()
 history_store = HistoryStore()
+notion_client = NotionClient(config.NOTION_API_TOKEN, config.NOTION_DATABASE_ID)
 
 
 def register_analysis_routes(app, analyzer):
@@ -57,6 +59,7 @@ def register_analysis_routes(app, analyzer):
             'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
             'gemini_model': getattr(analyzer.gemini_analyzer, 'current_model', getattr(config, 'GEMINI_MODEL', None)),
             'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
+            'notion_configured': notion_client.is_configured(),
         }
 
         if expose_model_path:
@@ -328,6 +331,30 @@ def register_analysis_routes(app, analyzer):
         except Exception as exc:
             logger.error("Follow-up question failed: %s", exc, exc_info=True)
             return jsonify({'success': False, 'error': str(exc)}), 500
+
+    @app.route("/api/notion/export", methods=["POST"])
+    def export_to_notion():
+        """Send the latest Gemini project snapshot to Notion."""
+
+        if not notion_client.is_configured():
+            return jsonify({'success': False, 'error': 'Notion is not configured.'}), 400
+
+        payload = request.get_json(silent=True) or {}
+        job_id = payload.get('job_id')
+
+        if not job_id:
+            return jsonify({'success': False, 'error': 'Missing job_id for Notion export.'}), 400
+
+        with analysis_lock:
+            job = analysis_jobs.get(job_id)
+
+        if not job or job.get('analysis_type') != 'gemini':
+            return jsonify({'success': False, 'error': 'Gemini results not found for this job ID.'}), 404
+
+        results = job.get('results') or {}
+        response = notion_client.create_project_page(results)
+        status_code = 200 if response.get('success') else 500
+        return jsonify(response), status_code
     
     @app.route("/api/visualize/<job_id>/<int:page_num>", methods=["GET"])
     def visualize_page(job_id, page_num):

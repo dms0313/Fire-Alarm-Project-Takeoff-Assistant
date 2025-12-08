@@ -54,6 +54,9 @@ const historyList = document.getElementById('historyList');
 const historyListWrapper = document.getElementById('historyListWrapper');
 const historyStatus = document.getElementById('historyStatus');
 const historyToggle = document.getElementById('historyToggle');
+const notionTransferSection = document.getElementById('notionTransferSection');
+const sendToNotionBtn = document.getElementById('sendToNotionBtn');
+const notionTransferStatus = document.getElementById('notionTransferStatus');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -106,6 +109,7 @@ let latestGeminiResults = null;
 let pageSelectionCollapsed = true;
 let geminiCardIdCounts = {};
 let historyCollapsed = true;
+let notionConfigured = false;
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -125,6 +129,7 @@ DocumentReady(() => {
     setupControls();
     setupModelSelector();
     setupFollowUp();
+    setupNotionTransfer();
     setPageSelectionCollapsed(true);
     setHistoryCollapsed(true);
     resetGeminiUI();
@@ -577,6 +582,7 @@ function resetGeminiUI() {
     updateGeminiReportButtonState();
     clearFollowUpUI();
     setFollowUpEnabled(false);
+    resetNotionTransfer();
 }
 
 function setupFollowUp() {
@@ -741,6 +747,106 @@ function setCopyStatus(message, tone = 'info') {
     copyGeminiStatus.textContent = message || '';
     copyGeminiStatus.classList.toggle('hidden', !message);
     copyGeminiStatus.style.color = tone === 'error' ? '#ffb3b3' : '#d0e8ff';
+}
+
+function setupNotionTransfer() {
+    if (sendToNotionBtn) {
+        sendToNotionBtn.addEventListener('click', sendProjectToNotion);
+    }
+
+    resetNotionTransfer();
+}
+
+function resetNotionTransfer() {
+    if (notionTransferSection) {
+        notionTransferSection.classList.add('hidden');
+    }
+    if (sendToNotionBtn) {
+        sendToNotionBtn.disabled = true;
+    }
+    setNotionStatus('', 'info', false);
+}
+
+function setNotionStatus(message = '', tone = 'info', pinned = false) {
+    if (!notionTransferStatus) {
+        return;
+    }
+
+    notionTransferStatus.textContent = message || '';
+    notionTransferStatus.classList.toggle('hidden', !message);
+    notionTransferStatus.classList.toggle('error', tone === 'error');
+    notionTransferStatus.dataset.pinned = pinned ? 'true' : 'false';
+}
+
+function updateNotionTransferState() {
+    const hasGeminiResults = !!(latestGeminiResults && latestGeminiResults.job_id);
+    const isPinned = notionTransferStatus && notionTransferStatus.dataset.pinned === 'true';
+
+    if (notionTransferSection) {
+        notionTransferSection.classList.toggle('hidden', !hasGeminiResults);
+    }
+
+    if (sendToNotionBtn) {
+        const canSend = notionConfigured && hasGeminiResults;
+        sendToNotionBtn.disabled = !canSend;
+        sendToNotionBtn.title = canSend
+            ? 'Send the latest Gemini snapshot to Notion'
+            : notionConfigured
+                ? 'Run Gemini analysis to enable Notion export.'
+                : 'Set NOTION_API_TOKEN to enable Notion export.';
+    }
+
+    if (isPinned) {
+        return;
+    }
+
+    if (!notionConfigured) {
+        setNotionStatus('Set NOTION_API_TOKEN and NOTION_DATABASE_ID to enable Notion exports.', 'error');
+    } else if (hasGeminiResults) {
+        setNotionStatus('Ready to send the latest Gemini snapshot to Notion.');
+    } else {
+        setNotionStatus('');
+    }
+}
+
+async function sendProjectToNotion() {
+    if (!notionConfigured) {
+        setNotionStatus('Notion is not configured on the server.', 'error');
+        return;
+    }
+
+    if (!latestGeminiResults || !latestGeminiResults.job_id) {
+        setNotionStatus('Run Gemini analysis before sending to Notion.', 'error');
+        return;
+    }
+
+    setNotionStatus('Sending project to Notion...', 'info');
+    if (sendToNotionBtn) {
+        sendToNotionBtn.disabled = true;
+    }
+
+    try {
+        const response = await fetch('/api/notion/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: latestGeminiResults.job_id }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Unable to send to Notion.');
+        }
+
+        const message = data.url ? `Saved to Notion. ${data.url}` : 'Saved to Notion.';
+        setNotionStatus(message, 'info', true);
+    } catch (error) {
+        setNotionStatus(`Notion export failed: ${error.message}`, 'error');
+    } finally {
+        if (sendToNotionBtn) {
+            const canSend = notionConfigured && !!(latestGeminiResults && latestGeminiResults.job_id);
+            sendToNotionBtn.disabled = !canSend;
+        }
+    }
 }
 
 function hideDetectionResults() {
@@ -955,6 +1061,9 @@ function checkStatus() {
                     geminiStatusMessage.classList.add('hidden');
                 }
             }
+
+            notionConfigured = !!data.notion_configured;
+            updateNotionTransferState();
 
             updateGeminiButtonAvailability();
 
@@ -1564,6 +1673,7 @@ function displayGeminiResults(data, options = {}) {
         copyGeminiBtn.title = 'Copy the AI sections to your clipboard';
     }
     setCopyStatus(fromHistory ? 'Loaded from history.' : 'Ready to copy the Gemini summary and sections.');
+    updateNotionTransferState();
 
     const {
         project_info: projectInfo = {},
