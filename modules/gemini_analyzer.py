@@ -9,6 +9,7 @@ import os
 import json
 import re
 import time
+from dataclasses import dataclass
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
@@ -65,6 +66,18 @@ class GeminiRequestFailed(RuntimeError):
     def __init__(self, message: str, prompt_feedback: Any = None):
         super().__init__(message)
         self.prompt_feedback = prompt_feedback
+
+
+@dataclass
+class ModelTextResult:
+    """Container for Gemini text generation results, including errors."""
+
+    text: Optional[str] = None
+    error: Optional[str] = None
+    prompt_feedback: Optional[Dict[str, Any]] = None
+    blocked: bool = False
+    empty_response: bool = False
+    model: Optional[str] = None
 
 class GeminiFireAlarmAnalyzer:
     """AI-powered fire alarm specification analyzer using Gemini"""
@@ -319,14 +332,18 @@ class GeminiFireAlarmAnalyzer:
 
     def _generate_model_text(
         self, prompt: str, images: Optional[List[Dict[str, Any]]] = None
-    ) -> Optional[str]:
-        """Call Gemini with retries and robust empty-response handling."""
+    ) -> ModelTextResult:
+        """Call Gemini with retries and return structured results."""
 
         if not self.model:
             logger.error("Gemini model is not initialized.")
-            return None
+            return ModelTextResult(
+                error="Gemini model is not initialized.",
+                empty_response=True,
+            )
 
         last_error: Optional[Exception] = None
+        last_result: Optional[ModelTextResult] = None
 
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -345,42 +362,80 @@ class GeminiFireAlarmAnalyzer:
 
                 if not response:
                     logger.error("Gemini returned no response object.")
-                    return None
+                    last_result = ModelTextResult(
+                        error="Gemini returned no response object.",
+                        empty_response=True,
+                        model=self.current_model,
+                    )
+                    last_error = GeminiRequestFailed(last_result.error)
+                    break
 
                 prompt_feedback = getattr(response, "prompt_feedback", None)
+                formatted_feedback = self._format_prompt_feedback(prompt_feedback)
+                if formatted_feedback:
+                    self.last_prompt_feedback = formatted_feedback
 
                 try:
                     response_text = response.text
                 except Exception:
                     response_text = None
 
-                if not response_text or not isinstance(response_text, str) or not response_text.strip():
-                    candidate_text = self._extract_candidate_text(response)
-                    if candidate_text:
-                        return candidate_text
-
-                    if prompt_feedback and getattr(prompt_feedback, "block_reason", None) is not None:
-                        message = self._build_block_message(prompt_feedback)
-                        raise GeminiPromptBlocked(message, prompt_feedback)
-
-                    candidates = getattr(response, "candidates", None)
-                    if candidates is not None and len(candidates) == 0:
-                        logger.error("Gemini returned an empty candidates list without text.")
-                        raise GeminiRequestFailed(
-                            "Gemini returned an empty response without text or candidates."
-                        )
-
-                    logger.error("Gemini returned no text or candidates to parse.")
-                    raise GeminiRequestFailed(
-                        "Gemini returned no text or candidates to parse."
+                if response_text and isinstance(response_text, str) and response_text.strip():
+                    return ModelTextResult(
+                        text=response_text.strip(),
+                        prompt_feedback=formatted_feedback,
+                        model=self.current_model,
                     )
 
-                return response_text
+                candidate_text = self._extract_candidate_text(response)
+                if candidate_text:
+                    return ModelTextResult(
+                        text=candidate_text,
+                        prompt_feedback=formatted_feedback,
+                        model=self.current_model,
+                    )
+
+                block_reason = getattr(prompt_feedback, "block_reason", None)
+                message = (
+                    self._build_block_message(prompt_feedback)
+                    if block_reason is not None
+                    else "Gemini returned an empty response without text or candidates."
+                )
+
+                last_result = ModelTextResult(
+                    error=message,
+                    prompt_feedback=formatted_feedback,
+                    blocked=block_reason is not None,
+                    empty_response=True,
+                    model=self.current_model,
+                )
+
+                if block_reason is not None:
+                    last_error = GeminiPromptBlocked(message, prompt_feedback)
+                    logger.error("Gemini request blocked: %s", message)
+                    break
+
+                logger.warning(
+                    "Gemini returned empty response (attempt %s/%s): %s",
+                    attempt,
+                    self.max_retries,
+                    message,
+                )
+                last_error = GeminiRequestFailed(message, prompt_feedback)
+                if attempt < self.max_retries:
+                    time.sleep(1.5 * attempt)
+                    continue
 
             except GeminiPromptBlocked as exc:
                 last_error = exc
                 self.last_prompt_feedback = self._format_prompt_feedback(
                     getattr(exc, "prompt_feedback", None)
+                )
+                last_result = ModelTextResult(
+                    error=str(exc),
+                    prompt_feedback=self.last_prompt_feedback,
+                    blocked=True,
+                    model=self.current_model,
                 )
                 logger.error("Gemini request blocked: %s", exc)
                 break
@@ -422,7 +477,12 @@ class GeminiFireAlarmAnalyzer:
                     time.sleep(1.5 * attempt)
 
         if isinstance(last_error, GeminiPromptBlocked):
-            raise last_error
+            return last_result or ModelTextResult(
+                error=str(last_error),
+                prompt_feedback=self.last_prompt_feedback,
+                blocked=True,
+                model=self.current_model,
+            )
 
         fallback_model = self._next_fallback_model()
         if fallback_model:
@@ -432,12 +492,12 @@ class GeminiFireAlarmAnalyzer:
                 last_error,
             )
             if self._initialize_model(fallback_model):
-                try:
-                    return self._generate_model_text(prompt, images=images)
-                except GeminiPromptBlocked:
-                    raise
-                except Exception as exc:  # pragma: no cover - remote API
-                    last_error = exc
+                fallback_result = self._generate_model_text(prompt, images=images)
+                if fallback_result.text or fallback_result.error:
+                    return fallback_result
+
+        if last_result:
+            return last_result
 
         logger.error(
             "Gemini request failed after %s attempts: %s", self.max_retries, last_error
@@ -1199,24 +1259,36 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
 """
 
         try:
-            response_text = self._generate_model_text(self._add_system_instruction(prompt))
-            if not response_text:
-                return {'success': False, 'error': 'Empty response from Gemini'}
+            result = self._generate_model_text(self._add_system_instruction(prompt))
+            if result.text:
+                parsed = self._parse_json(
+                    result.text,
+                    {
+                        'answer': '',
+                        'referenced_pages': [],
+                        'co_detection': {'needed': None, 'reason': None},
+                        'notes': [],
+                    },
+                )
+                return {'success': True, 'response': parsed}
 
-            parsed = self._parse_json(
-                response_text,
-                {
-                    'answer': '',
-                    'referenced_pages': [],
-                    'co_detection': {'needed': None, 'reason': None},
-                    'notes': [],
-                },
-            )
-            return {'success': True, 'response': parsed}
+            return {
+                'success': False,
+                'error': result.error or 'Empty response from Gemini',
+                'prompt_feedback': result.prompt_feedback,
+            }
         except GeminiPromptBlocked as exc:
-            return {'success': False, 'error': str(exc), 'prompt_feedback': self._format_prompt_feedback(exc.prompt_feedback)}
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self._format_prompt_feedback(exc.prompt_feedback),
+            }
         except GeminiRequestFailed as exc:
-            return {'success': False, 'error': str(exc), 'prompt_feedback': self.last_prompt_feedback}
+            return {
+                'success': False,
+                'error': str(exc),
+                'prompt_feedback': self.last_prompt_feedback,
+            }
         except Exception as exc:
             logger.error("Follow-up question failed: %s", exc, exc_info=True)
             return {'success': False, 'error': str(exc)}
@@ -1338,10 +1410,14 @@ Extract the following information:
         """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return {}
-            return self._parse_json(response_text, {})
+            result = self._generate_model_text(prompt, images=image_payload)
+            if result.text:
+                return self._parse_json(result.text, {})
+
+            return {
+                'error': result.error or 'Gemini returned an empty response.',
+                'prompt_feedback': result.prompt_feedback,
+            }
         except GeminiPromptBlocked:
             raise
         except GeminiRequestFailed:
@@ -1450,10 +1526,15 @@ Also, briefly note if you detect any CONFLICTS between cited codes (e.g., citing
         """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return {'fire_alarm_codes': []}
-            data = self._parse_json(response_text, {})
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
+                return {
+                    'fire_alarm_codes': [],
+                    'error': result.error,
+                    'prompt_feedback': result.prompt_feedback,
+                }
+
+            data = self._parse_json(result.text, {})
             if isinstance(data, dict) and 'fire_alarm_codes' not in data:
                 # Backwards compatibility with older schema
                 fire_alarm_codes = data.get('fire_alarm_standards') or []
@@ -1520,10 +1601,10 @@ Example:
 """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
                 return []
-            parsed_notes = self._parse_json(response_text, [])
+            parsed_notes = self._parse_json(result.text, [])
             if not isinstance(parsed_notes, list):
                 return []
 
@@ -1620,10 +1701,19 @@ Only return devices that require fire alarm integration. Ignore generic HVAC not
 """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return {'duct_detectors': [], 'dampers': []}
-            return self._parse_json(response_text, {'duct_detectors': [], 'dampers': [], 'high_airflow_units': []})
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
+                return {
+                    'duct_detectors': [],
+                    'dampers': [],
+                    'high_airflow_units': [],
+                    'error': result.error,
+                    'prompt_feedback': result.prompt_feedback,
+                }
+            return self._parse_json(
+                result.text,
+                {'duct_detectors': [], 'dampers': [], 'high_airflow_units': []},
+            )
         except GeminiPromptBlocked:
             raise
         except GeminiRequestFailed:
@@ -1671,11 +1761,17 @@ Return JSON with:
 """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return {}
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
+                return {
+                    'primary_fa_page': {},
+                    'unusual_placements': [],
+                    'co_detection': {'needed': None, 'reason': None},
+                    'error': result.error,
+                    'prompt_feedback': result.prompt_feedback,
+                }
             return self._parse_json(
-                response_text,
+                result.text,
                 {'primary_fa_page': {}, 'unusual_placements': [], 'co_detection': {'needed': None, 'reason': None}},
             )
         except GeminiPromptBlocked:
@@ -1750,10 +1846,10 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         """
 
         try:
-            response_text = self._generate_model_text(prompt, images=image_payload)
-            if not response_text:
-                return {}
-            return self._parse_json(response_text, {})
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
+                return {'error': result.error, 'prompt_feedback': result.prompt_feedback}
+            return self._parse_json(result.text, {})
         except GeminiPromptBlocked:
             raise
         except GeminiRequestFailed:
@@ -1797,11 +1893,11 @@ Return JSON with:
 """
 
         try:
-            response_text = self._generate_model_text(self._add_system_instruction(prompt))
-            if not response_text:
-                return {}
+            result = self._generate_model_text(self._add_system_instruction(prompt))
+            if not result.text:
+                return {'error': result.error, 'prompt_feedback': result.prompt_feedback}
             parsed = self._parse_json(
-                response_text,
+                result.text,
                 {
                     'expected_scope': [],
                     'assumptions': [],
