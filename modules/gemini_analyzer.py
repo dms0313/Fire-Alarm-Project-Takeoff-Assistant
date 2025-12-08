@@ -981,6 +981,7 @@ class GeminiFireAlarmAnalyzer:
                 'pages_considered': len(spec_sections),
                 'pages_sent_to_gemini': [page.get('page_number') for page in spec_sections],
                 'source': 'spec_pdf',
+                'sources': spec_source_files,
             }
 
         # Even if we had blocks, we return success=True so the UI shows what we DID get
@@ -1155,6 +1156,7 @@ Rules:
         prior_results: Optional[Dict[str, Any]] = None,
         pdf_path: Optional[str] = None,
         spec_pdf_path: Optional[str] = None,
+        additional_spec_paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Use Gemini to answer follow-up questions with project context."""
 
@@ -1194,11 +1196,20 @@ Rules:
             except Exception as exc:
                 logger.error("Failed to build follow-up context from PDF: %s", exc)
 
+        spec_paths: List[str] = []
         if spec_pdf_path:
+            spec_paths.append(spec_pdf_path)
+        if additional_spec_paths:
+            spec_paths.extend([path for path in additional_spec_paths if path])
+
+        if spec_paths:
             try:
-                spec_pages = self.pdf_processor.extract_text_from_pdf(spec_pdf_path)
-                spec_sections = self._filter_spec_book_sections(spec_pages)
-                spec_excerpt = self._compile_spec_excerpt(spec_sections, char_limit=4000)
+                combined_sections: List[Dict[str, Any]] = []
+                for path in spec_paths:
+                    spec_pages = self.pdf_processor.extract_text_from_pdf(path)
+                    combined_sections.extend(self._filter_spec_book_sections(spec_pages))
+
+                spec_excerpt = self._compile_spec_excerpt(combined_sections, char_limit=4000)
                 if spec_excerpt:
                     context_blocks.append(f"SPEC EXCERPT:\n{spec_excerpt}")
             except Exception as exc:
@@ -1263,6 +1274,7 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
         pdf_path: str,
         include_images: bool = True,
         spec_pdf_path: Optional[str] = None,
+        additional_spec_paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Comprehensive fire alarm analysis of construction bid set PDF
@@ -1280,10 +1292,21 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
             pages_text = self.pdf_processor.extract_text_from_pdf(pdf_path)
             filtered_pages = self._filter_pages_for_gemini(pages_text)
 
-            spec_sections: Optional[List[Dict[str, Any]]] = None
+            spec_sections: List[Dict[str, Any]] = []
+            spec_paths: List[str] = []
             if spec_pdf_path:
-                spec_pages = self.pdf_processor.extract_text_from_pdf(spec_pdf_path)
-                spec_sections = self._filter_spec_book_sections(spec_pages)
+                spec_paths.append(spec_pdf_path)
+            if additional_spec_paths:
+                spec_paths.extend([path for path in additional_spec_paths if path])
+
+            spec_source_files = [os.path.basename(path) for path in spec_paths]
+
+            for path in spec_paths:
+                try:
+                    spec_pages = self.pdf_processor.extract_text_from_pdf(path)
+                    spec_sections.extend(self._filter_spec_book_sections(spec_pages))
+                except Exception as exc:
+                    logger.error("Failed to process spec attachment %s: %s", path, exc)
 
             if not filtered_pages:
                 return {
