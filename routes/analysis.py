@@ -27,38 +27,6 @@ analysis_lock = threading.Lock()
 history_store = HistoryStore()
 
 
-def _parse_float_field(form, key, default, min_value=None, max_value=None):
-    raw_value = form.get(key)
-    if raw_value is None:
-        return default
-
-    try:
-        value = float(raw_value)
-        if min_value is not None:
-            value = max(min_value, value)
-        if max_value is not None:
-            value = min(max_value, value)
-        return value
-    except (TypeError, ValueError):
-        return default
-
-
-def _parse_int_field(form, key, default, min_value=None, max_value=None):
-    raw_value = form.get(key)
-    if raw_value is None:
-        return default
-
-    try:
-        value = int(float(raw_value))
-        if min_value is not None:
-            value = max(min_value, value)
-        if max_value is not None:
-            value = min(max_value, value)
-        return value
-    except (TypeError, ValueError):
-        return default
-
-
 def register_analysis_routes(app, analyzer):
     """Register analysis-related routes"""
     
@@ -239,16 +207,6 @@ def register_analysis_routes(app, analyzer):
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
 
         send_images = request.form.get('send_images', 'true').lower() == 'true'
-        temperature = _parse_float_field(request.form, 'temperature', config.GEMINI_TEMPERATURE, 0, 1)
-        top_p = _parse_float_field(request.form, 'top_p', config.GEMINI_TOP_P, 0, 1)
-        top_k = _parse_int_field(request.form, 'top_k', config.GEMINI_TOP_K, 1, 64)
-        max_output_tokens = _parse_int_field(
-            request.form,
-            'max_output_tokens',
-            config.GEMINI_MAX_OUTPUT_TOKENS,
-            256,
-            4096,
-        )
 
         # Save uploaded file
         job_id = str(uuid.uuid4())
@@ -263,13 +221,6 @@ def register_analysis_routes(app, analyzer):
 
         try:
             logger.info(f"Starting Gemini analysis job {job_id}")
-
-            analyzer.gemini_analyzer.update_generation_settings(
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                max_output_tokens=max_output_tokens,
-            )
 
             # =================================================================
             # UPDATED CALL: Pass the pdf_path directly to the new analyzer
