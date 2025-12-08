@@ -160,10 +160,6 @@ GEMINI_MODEL_CHOICES = [
     "gemini-2.0-flash-lite-preview",
     "gemini-2.0-flash-exp",
 ]
-GEMINI_TEMPERATURE = _float_from_env("GEMINI_TEMPERATURE", 0.2)
-GEMINI_TOP_P = _float_from_env("GEMINI_TOP_P", 0.9)
-GEMINI_TOP_K = _int_from_env("GEMINI_TOP_K", 40)
-GEMINI_MAX_OUTPUT_TOKENS = _int_from_env("GEMINI_MAX_OUTPUT_TOKENS", 1400)
 
 # =============================================================================
 # PROCESSING SETTINGS
