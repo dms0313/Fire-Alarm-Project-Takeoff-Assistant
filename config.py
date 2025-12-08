@@ -161,6 +161,13 @@ GEMINI_MODEL_CHOICES = [
     "gemini-2.0-flash-exp",
 ]
 
+# Notion integration
+NOTION_API_TOKEN = os.environ.get("NOTION_API_TOKEN")
+NOTION_DATABASE_ID = os.environ.get(
+    "NOTION_DATABASE_ID",
+    "29b30dfde2d7800f846ffa1ad38dfbd5",
+)
+
 # =============================================================================
 # PROCESSING SETTINGS
 # =============================================================================
