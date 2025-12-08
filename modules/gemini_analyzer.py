@@ -958,6 +958,15 @@ class GeminiFireAlarmAnalyzer:
             default={},
         )
 
+        # Step 9: If the documents show no FA content, derive code-based expectations
+        logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
+        code_based_expectations = safe_step(
+            self._derive_code_based_expectations,
+            focused_pages,
+            codes,
+            default={},
+        ) if not fa_pages else {}
+
         high_level_overview = self._build_high_level_overview(
             project_info, specifications
         )
@@ -966,6 +975,7 @@ class GeminiFireAlarmAnalyzer:
             specifications,
             fa_notes,
             device_layout_review,
+            code_based_expectations,
         )
 
         structured_summary = self._build_structured_summary(
@@ -975,6 +985,7 @@ class GeminiFireAlarmAnalyzer:
             fa_notes,
             mechanical_devices,
             device_layout_review,
+            code_based_expectations,
         )
 
         results = {
@@ -991,7 +1002,8 @@ class GeminiFireAlarmAnalyzer:
             'spec_book_context': None,
             'structured_summary': structured_summary,
             'total_pages': len(pages_text),
-            'analysis_timestamp': datetime.now().isoformat()
+            'analysis_timestamp': datetime.now().isoformat(),
+            'code_based_expectations': code_based_expectations,
         }
 
         if spec_sections:
@@ -1686,6 +1698,62 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
             logger.error(f"Error extracting specifications: {str(e)}")
             return {'error': str(e)}
 
+    def _derive_code_based_expectations(
+        self,
+        pages_text: List[Dict[str, Any]],
+        codes: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Infer likely fire alarm requirements when drawings show no FA content."""
+
+        if not pages_text:
+            return {}
+
+        cited_codes = []
+        if isinstance(codes, dict):
+            cited_codes = codes.get('fire_alarm_codes') or []
+
+        front_matter = "\n\n".join([
+            f"PAGE {p.get('page_number')}:\n{p.get('text','')}" for p in pages_text[:6]
+        ])[:15000]
+
+        prompt = f"""The project documents below do not show any explicit fire alarm design or general notes. Based on the
+building description, occupancy hints, and the referenced codes, infer what the fire alarm scope would likely need to
+include to meet code minimums.
+
+CITED CODES: {', '.join(cited_codes) if cited_codes else 'No fire alarm codes explicitly cited'}
+
+PROJECT TEXT (front matter & summaries):
+{front_matter}
+
+Return JSON with:
+- expected_scope: array of short bullet strings describing the minimum FA system/features likely required by the cited code(s)
+- assumptions: array of assumptions you had to make (occupancy, area, construction type, etc.)
+- notes: array of advisories or next steps to confirm with the AHJ
+- code_path: string summarizing which code/edition you relied upon (or "Unknown")
+"""
+
+        try:
+            response_text = self._generate_model_text(self._add_system_instruction(prompt))
+            if not response_text:
+                return {}
+            parsed = self._parse_json(
+                response_text,
+                {
+                    'expected_scope': [],
+                    'assumptions': [],
+                    'notes': [],
+                    'code_path': None,
+                },
+            )
+            return parsed if isinstance(parsed, dict) else {}
+        except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
+            raise
+        except Exception as exc:
+            logger.error("Error deriving code-based expectations: %s", exc)
+            return {}
+
     # ---------------------------------------------------------------------
     # Derived summary blocks for UI consumption
     # ---------------------------------------------------------------------
@@ -1711,6 +1779,7 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         specifications: Dict[str, Any],
         fire_alarm_notes: List[Dict[str, Any]],
         device_layout_review: Optional[Dict[str, Any]] = None,
+        code_based_expectations: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Compile key requirements and notes for the fire alarm scope."""
 
@@ -1741,12 +1810,22 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
                 co_note += f" ({co_detection['reason']})"
             requirement_items.append(co_note)
 
+        if code_based_expectations:
+            scope = code_based_expectations.get('expected_scope') or []
+            if scope:
+                requirement_items.append(
+                    "Code-based expected scope (no FA shown): " + "; ".join(scope[:4])
+                )
+            assumptions = code_based_expectations.get('assumptions') or []
+            if assumptions:
+                requirement_items.extend([f"Assumption: {item}" for item in assumptions[:3]])
+
 
         return {
             'requirements': requirement_items,
             'equipment': equipment_items,
             'codes': codes_list,
-            'notes': fire_alarm_notes or [],
+            'notes': fire_alarm_notes or (code_based_expectations.get('notes') if code_based_expectations else []) or [],
         }
 
     def _get_spec_value(self, specifications: Dict[str, Any], key: str) -> Optional[Any]:
@@ -1777,6 +1856,7 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
         fire_alarm_notes: List[Dict[str, Any]],
         mechanical_devices: Dict[str, List[Dict[str, Any]]],
         device_layout_review: Optional[Dict[str, Any]] = None,
+        code_based_expectations: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a structured summary with pitfalls and estimator notes."""
 
@@ -1998,6 +2078,13 @@ Format as JSON with these keys: CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SY
 
         if not fire_alarm_notes:
             add_estimator_note('No project-specific fire alarm notes captured—check drawings for keyed notes.')
+
+        if not fire_alarm_notes and code_based_expectations:
+            scope = code_based_expectations.get('expected_scope') or []
+            if scope:
+                add_estimator_note('Drawings lack FA scope—use code-based expectations until design is issued.')
+                for item in scope[:3]:
+                    add_estimator_note(f"Code-expected: {item}")
 
         if mech_bullets:
             add_estimator_note('Coordinate duct detectors and dampers with mechanical contractor for relay points.')
