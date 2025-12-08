@@ -982,7 +982,7 @@ class GeminiFireAlarmAnalyzer:
                 'pages_considered': len(spec_sections),
                 'pages_sent_to_gemini': [page.get('page_number') for page in spec_sections],
                 'source': 'spec_pdf',
-                'sources': spec_source_files or [],
+                'sources': spec_source_files,
             }
 
         # Even if we had blocks, we return success=True so the UI shows what we DID get
