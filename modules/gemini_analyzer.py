@@ -134,6 +134,16 @@ class GeminiFireAlarmAnalyzer:
         return {
             "candidate_count": 1,
         }
+
+    def _current_generation_settings(self) -> Dict[str, Any]:
+        """Return the runtime generation settings used for Gemini requests."""
+
+        return {
+            "model": self.current_model,
+            "generation_config": self._build_generation_config(),
+            "max_retries": self.max_retries,
+            "request_timeout_seconds": self.request_timeout,
+        }
     
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
