@@ -673,8 +673,6 @@ class GeminiFireAlarmAnalyzer:
             "addressable",
             "nac",
             "duct smoke detector",
-            "addressable fire alarm system",
-            "section 28 31 11",
         ]
         manufacturer_terms = [
             "approved manufacturers",
@@ -730,8 +728,7 @@ class GeminiFireAlarmAnalyzer:
             page_number = page.get("page_number")
 
             has_division = bool(division_pattern.search(lower))
-            has_fire_alarm_section = bool(fire_alarm_section_pattern.search(lower))
-            has_fire_alarm = has_fire_alarm_section or any(term in lower for term in fire_alarm_terms)
+            has_fire_alarm = any(term in lower for term in fire_alarm_terms)
             has_manufacturers = manufacturer_phrase_pattern.search(lower) is not None or any(
                 term in lower for term in manufacturer_terms
             )
