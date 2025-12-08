@@ -874,6 +874,7 @@ class GeminiFireAlarmAnalyzer:
         image_payload: Optional[List[Dict[str, Any]]] = None,
         image_pages: Optional[List[int]] = None,
         spec_sections: Optional[List[Dict[str, Any]]] = None,
+        spec_source_files: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Execute the core Gemini analysis steps once text has been extracted."""
 
@@ -1331,6 +1332,7 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
                 image_payload,
                 image_pages,
                 spec_sections,
+                spec_source_files,
             )
 
             results["generation_settings"] = self._current_generation_settings()
