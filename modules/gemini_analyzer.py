@@ -652,6 +652,10 @@ class GeminiFireAlarmAnalyzer:
             return []
 
         division_pattern = re.compile(r"\b28\s*(?:\d{2}|\d{2}\.\d{2}|\d{2}\.\d{2}\.\d{2})")
+        fire_alarm_section_pattern = re.compile(
+            r"\b28\s*31\s*11\b|\b283111\b|addressable\s+fire\s+alarm\s+system",
+            re.IGNORECASE,
+        )
         fire_alarm_terms = [
             "fire alarm",
             "mass notification",
