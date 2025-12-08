@@ -20,7 +20,15 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 # Corrected relative import for your module structure
 from .pdf_processor import PDFProcessor
-from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_MODEL_CHOICES  # Assumes GEMINI_MODEL is in config
+from config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    GEMINI_MODEL_CHOICES,
+    GEMINI_TEMPERATURE,
+    GEMINI_TOP_P,
+    GEMINI_TOP_K,
+    GEMINI_MAX_OUTPUT_TOKENS,
+)  # Assumes GEMINI_MODEL is in config
 
 
 SYSTEM_INSTRUCTIONS = (
@@ -74,6 +82,10 @@ class GeminiFireAlarmAnalyzer:
         self.request_timeout = int(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
         self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "8"))
         self.tried_models: List[str] = []
+        self.temperature = self._clamp(GEMINI_TEMPERATURE, 0.0, 1.0, 0.2)
+        self.top_p = self._clamp(GEMINI_TOP_P, 0.0, 1.0, 0.9)
+        self.top_k = int(self._clamp(GEMINI_TOP_K, 1, 64, 40))
+        self.max_output_tokens = int(self._clamp(GEMINI_MAX_OUTPUT_TOKENS, 256, 4096, 1400))
 
         if self.api_key:
             self._initialize_model(self.current_model)
@@ -109,6 +121,61 @@ class GeminiFireAlarmAnalyzer:
 
         target = model_name or self.current_model
         return True if target == self.current_model else self._initialize_model(target)
+
+    @staticmethod
+    def _clamp(value: float, min_value: float, max_value: float, fallback: float) -> float:
+        """Return *value* constrained to the given range, or *fallback* on failure."""
+
+        try:
+            numeric = float(value)
+            return max(min_value, min(max_value, numeric))
+        except (TypeError, ValueError):
+            return fallback
+
+    def update_generation_settings(
+        self,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Update generation parameters used for Gemini content requests."""
+
+        if temperature is not None:
+            self.temperature = self._clamp(temperature, 0.0, 1.0, self.temperature)
+        if top_p is not None:
+            self.top_p = self._clamp(top_p, 0.0, 1.0, self.top_p)
+        if top_k is not None:
+            self.top_k = int(self._clamp(top_k, 1, 64, self.top_k))
+        if max_output_tokens is not None:
+            self.max_output_tokens = int(
+                self._clamp(max_output_tokens, 256, 4096, self.max_output_tokens)
+            )
+
+        return self._current_generation_settings()
+
+    def _current_generation_settings(self) -> Dict[str, Any]:
+        return {
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "top_k": self.top_k,
+            "max_output_tokens": self.max_output_tokens,
+        }
+
+    def _build_generation_config(self) -> Dict[str, Any]:
+        """Return the config dict expected by the Gemini SDK."""
+
+        config = {
+            "temperature": self.temperature,
+            "top_p": self.top_p,
+            "max_output_tokens": self.max_output_tokens,
+            "candidate_count": 1,
+        }
+
+        if self.top_k:
+            config["top_k"] = int(self.top_k)
+
+        return config
     
     def is_available(self) -> bool:
         """Return True if Gemini model is initialized and ready."""
@@ -267,12 +334,7 @@ class GeminiFireAlarmAnalyzer:
                 response = self.model.generate_content(
                     request_content,
                     request_options={"timeout": self.request_timeout},
-                    generation_config={
-                        "temperature": 0.2,
-                        "top_p": 0.9,
-                        "max_output_tokens": 1400,
-                        "candidate_count": 1,
-                    },
+                    generation_config=self._build_generation_config(),
                     safety_settings={
                         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -1210,6 +1272,8 @@ Return JSON with keys: answer (string), referenced_pages (array of ints), co_det
                 image_pages,
                 spec_sections,
             )
+
+            results["generation_settings"] = self._current_generation_settings()
 
             if include_images:
                 results['image_pages_sent'] = image_pages
