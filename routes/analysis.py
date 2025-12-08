@@ -213,6 +213,17 @@ def register_analysis_routes(app, analyzer):
         temp_dir = tempfile.mkdtemp()
         pdf_path = os.path.join(temp_dir, 'upload.pdf')
         pdf_file.save(pdf_path)
+        # Collect any additional attachments (e.g., datasheets/specs)
+        additional_spec_paths = []
+        additional_files = request.files.getlist('additional_files') if request.files else []
+        for idx, attachment in enumerate(additional_files):
+            if not attachment or not attachment.filename:
+                continue
+
+            safe_name = os.path.basename(attachment.filename)
+            attachment_path = os.path.join(temp_dir, f'attachment_{idx}_{safe_name}')
+            attachment.save(attachment_path)
+            additional_spec_paths.append(attachment_path)
         spec_path = None
         spec_file = request.files.get('spec_pdf')
         if spec_file and spec_file.filename:
@@ -229,6 +240,7 @@ def register_analysis_routes(app, analyzer):
                 pdf_path,
                 include_images=send_images,
                 spec_pdf_path=spec_path,
+                additional_spec_paths=additional_spec_paths,
             )
             results['job_id'] = job_id
             # =================================================================
@@ -242,6 +254,7 @@ def register_analysis_routes(app, analyzer):
                     'pdf_path': pdf_path,
                     'temp_dir': temp_dir,
                     'spec_pdf_path': spec_path,
+                    'additional_spec_paths': additional_spec_paths,
                     'timestamp': datetime.now().isoformat(),
                     'analysis_type': 'gemini'
                 }
@@ -266,6 +279,9 @@ def register_analysis_routes(app, analyzer):
                 os.remove(pdf_path)
             if spec_path and os.path.exists(spec_path):
                 os.remove(spec_path)
+            for path in additional_spec_paths:
+                if os.path.exists(path):
+                    os.remove(path)
             if os.path.exists(temp_dir):
                 os.rmdir(temp_dir)
             return jsonify({'success': False, 'error': str(e)}), 500
@@ -297,12 +313,14 @@ def register_analysis_routes(app, analyzer):
             results = job.get('results') or {}
             pdf_path = job.get('pdf_path')
             spec_pdf_path = job.get('spec_pdf_path')
+            additional_spec_paths = job.get('additional_spec_paths')
 
             follow_up = analyzer.gemini_analyzer.answer_follow_up_question(
                 question,
                 prior_results=results,
                 pdf_path=pdf_path,
                 spec_pdf_path=spec_pdf_path,
+                additional_spec_paths=additional_spec_paths,
             )
 
             status_code = 200 if follow_up.get('success') else 400
