@@ -51,8 +51,15 @@ const askFollowUpBtn = document.getElementById('askFollowUpBtn');
 const followUpStatus = document.getElementById('followUpStatus');
 const followUpResponse = document.getElementById('followUpResponse');
 const historyList = document.getElementById('historyList');
+const historyListWrapper = document.getElementById('historyListWrapper');
 const historyStatus = document.getElementById('historyStatus');
 const historyToggle = document.getElementById('historyToggle');
+const geminiTemperatureInput = document.getElementById('geminiTemperature');
+const geminiTemperatureValue = document.getElementById('geminiTemperatureValue');
+const geminiTopPInput = document.getElementById('geminiTopP');
+const geminiTopPValue = document.getElementById('geminiTopPValue');
+const geminiTopKInput = document.getElementById('geminiTopK');
+const geminiMaxTokensInput = document.getElementById('geminiMaxTokens');
 
 const DEVICE_NAME_MAP = {
     cm: 'Control Module',
@@ -125,7 +132,7 @@ DocumentReady(() => {
     setupModelSelector();
     setupFollowUp();
     setPageSelectionCollapsed(true);
-    setHistoryCollapsed(false);
+    setHistoryCollapsed(true);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -260,6 +267,22 @@ function setupControls() {
             confidenceValue.textContent = parseFloat(e.target.value).toFixed(2);
         });
     }
+
+    if (geminiTemperatureInput && geminiTemperatureValue) {
+        const updateTemperature = (value) => {
+            geminiTemperatureValue.textContent = parseFloat(value || 0).toFixed(2);
+        };
+        updateTemperature(geminiTemperatureInput.value);
+        geminiTemperatureInput.addEventListener('input', (e) => updateTemperature(e.target.value));
+    }
+
+    if (geminiTopPInput && geminiTopPValue) {
+        const updateTopP = (value) => {
+            geminiTopPValue.textContent = parseFloat(value || 0).toFixed(2);
+        };
+        updateTopP(geminiTopPInput.value);
+        geminiTopPInput.addEventListener('input', (e) => updateTopP(e.target.value));
+    }
 }
 
 function setupModelSelector() {
@@ -300,6 +323,51 @@ function setPageSelectionCollapsed(collapsed) {
         pageSelectionToggle.textContent = collapsed ? 'Expand Page Selection' : 'Collapse Page Selection';
         pageSelectionToggle.setAttribute('aria-expanded', (!collapsed).toString());
     }
+}
+
+function setHistoryCollapsed(collapsed) {
+    historyCollapsed = collapsed;
+
+    if (historyToggle) {
+        const label = historyToggle.querySelector('.toggle-label');
+        if (label) {
+            label.textContent = collapsed ? 'Show History' : 'Hide History';
+        }
+        historyToggle.setAttribute('aria-expanded', (!collapsed).toString());
+    }
+
+    if (historyListWrapper) {
+        const targetHeight = collapsed ? 0 : historyListWrapper.scrollHeight;
+        historyListWrapper.style.maxHeight = `${targetHeight}px`;
+        historyListWrapper.classList.toggle('expanded', !collapsed);
+        historyListWrapper.classList.toggle('collapsed', collapsed);
+    }
+
+    if (historyList) {
+        historyList.setAttribute('aria-hidden', collapsed.toString());
+    }
+}
+
+function clampNumber(value, min, max, fallback) {
+    const num = Number.parseFloat(value);
+    if (Number.isFinite(num)) {
+        return Math.min(max, Math.max(min, num));
+    }
+    return fallback;
+}
+
+function getGeminiGenerationSettings() {
+    const temperature = clampNumber(geminiTemperatureInput ? geminiTemperatureInput.value : null, 0, 1, 0.2);
+    const topP = clampNumber(geminiTopPInput ? geminiTopPInput.value : null, 0, 1, 0.9);
+    const topK = clampNumber(geminiTopKInput ? geminiTopKInput.value : null, 1, 64, 40);
+    const maxTokens = clampNumber(geminiMaxTokensInput ? geminiMaxTokensInput.value : null, 256, 4096, 1400);
+
+    return {
+        temperature,
+        top_p: topP,
+        top_k: topK,
+        max_output_tokens: Math.round(maxTokens),
+    };
 }
 
 function positionPageHoverPreview(target) {
@@ -1174,6 +1242,10 @@ function startAnalysis(type) {
         endpoint = '/api/analyze_gemini';
         const sendGeminiImages = sendGeminiImagesCheckbox ? sendGeminiImagesCheckbox.checked : false;
         formData.append('send_images', sendGeminiImages);
+        const generationSettings = getGeminiGenerationSettings();
+        Object.entries(generationSettings).forEach(([key, value]) => {
+            formData.append(key, value);
+        });
         const specFile = selectedSpecFile || (specFileInput ? specFileInput.files[0] : null);
         if (specFile) {
             formData.append('spec_pdf', specFile);
@@ -3136,19 +3208,8 @@ async function refreshHistoryList() {
         renderHistoryEntries(payload.entries || []);
     } catch (error) {
         setHistoryStatus(error.message || 'Unable to load history', true);
-    }
-}
-
-function setHistoryCollapsed(collapsed) {
-    historyCollapsed = collapsed;
-
-    if (historyList) {
-        historyList.classList.toggle('collapsed', collapsed);
-    }
-
-    if (historyToggle) {
-        historyToggle.textContent = collapsed ? 'Show History' : 'Hide History';
-        historyToggle.setAttribute('aria-expanded', (!collapsed).toString());
+    } finally {
+        setTimeout(() => setHistoryCollapsed(historyCollapsed), 50);
     }
 }
 

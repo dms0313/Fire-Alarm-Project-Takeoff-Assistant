@@ -42,12 +42,15 @@
                         </div>
                         <div class="history-actions-inline">
                             <button type="button" class="collapse-toggle" id="historyToggle" aria-expanded="false">
-                                Show History
+                                <span class="toggle-label">Show History</span>
+                                <span class="toggle-chevron" aria-hidden="true">▸</span>
                             </button>
                             <div class="history-status" id="historyStatus"></div>
                         </div>
                     </div>
-                    <div class="history-list collapsed" id="historyList" role="list">
+                    <div class="history-list-wrapper collapsed" id="historyListWrapper">
+                        <div class="history-list" id="historyList" role="list" aria-hidden="true">
+                        </div>
                     </div>
                 </section>
             </aside>
@@ -166,6 +169,25 @@
                                     <input type="checkbox" id="sendGeminiImages" checked>
                                     <label for="sendGeminiImages">Send key pages to Gemini as images (cover, electrical/fire alarm, mechanical)</label>
                                 </div>
+                                <div class="gemini-advanced-grid" aria-label="Fine tune Gemini generation">
+                                    <div class="slider-group">
+                                        <label for="geminiTemperature">Temperature: <span class="slider-value" id="geminiTemperatureValue">0.20</span></label>
+                                        <input type="range" id="geminiTemperature" min="0" max="1" step="0.05" value="0.2">
+                                    </div>
+                                    <div class="slider-group">
+                                        <label for="geminiTopP">Top P: <span class="slider-value" id="geminiTopPValue">0.90</span></label>
+                                        <input type="range" id="geminiTopP" min="0" max="1" step="0.05" value="0.9">
+                                    </div>
+                                    <div class="input-group compact">
+                                        <label for="geminiTopK">Top K</label>
+                                        <input type="number" id="geminiTopK" min="1" max="64" step="1" value="40">
+                                    </div>
+                                    <div class="input-group compact">
+                                        <label for="geminiMaxTokens">Max Tokens</label>
+                                        <input type="number" id="geminiMaxTokens" min="256" max="4096" step="64" value="1400">
+                                    </div>
+                                </div>
+                                <p class="section-subtitle">Tune Gemini creativity and response length to match your workflow.</p>
                             </div>
                         </div>
 

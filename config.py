@@ -55,6 +55,25 @@ def _int_from_env(var_name: str, default: int) -> int:
         return default
 
 
+def _float_from_env(var_name: str, default: float) -> float:
+    """Return a float environment value or a default when parsing fails."""
+
+    raw_value = os.environ.get(var_name)
+    if raw_value is None:
+        return default
+
+    try:
+        return float(raw_value)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Invalid float for %s: %s. Using default %s.",
+            var_name,
+            raw_value,
+            default,
+        )
+        return default
+
+
 def _iter_env_candidates(env_path: str, cwd: Path) -> Iterable[Path]:
     """Yield candidate paths derived from the LOCAL_MODEL_PATH environment value."""
 
@@ -141,6 +160,10 @@ GEMINI_MODEL_CHOICES = [
     "gemini-2.0-flash-lite-preview",
     "gemini-2.0-flash-exp",
 ]
+GEMINI_TEMPERATURE = _float_from_env("GEMINI_TEMPERATURE", 0.2)
+GEMINI_TOP_P = _float_from_env("GEMINI_TOP_P", 0.9)
+GEMINI_TOP_K = _int_from_env("GEMINI_TOP_K", 40)
+GEMINI_MAX_OUTPUT_TOKENS = _int_from_env("GEMINI_MAX_OUTPUT_TOKENS", 1400)
 
 # =============================================================================
 # PROCESSING SETTINGS
