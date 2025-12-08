@@ -154,12 +154,9 @@ This document describes the modularized architecture of the Fire Alarm PDF Analy
 
 **Key Methods**:
 - `analyze_pdf_text()`: Main analysis pipeline
-- `_extract_project_info()`: Cover page analysis
-- `_extract_code_requirements()`: Code identification
+- `_run_consolidated_extraction()`: Single Gemini prompt that returns project info, codes, notes, mechanical tie-ins, specs, and device layout review in one response
 - `_identify_fa_pages()`: Find fire alarm pages
-- `_extract_fa_notes()`: Extract specifications
-- `_extract_mechanical_devices()`: Find duct detectors, etc.
-- `_extract_specifications()`: System specs
+- `_prioritize_pages_for_ai()`: Trim PDF text to the most relevant sheets before prompting
 
 **Dependencies**: Google Generative AI SDK
 
