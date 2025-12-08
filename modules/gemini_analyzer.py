@@ -3,6 +3,7 @@ Gemini Analyzer Module
 Handles AI-powered analysis of fire alarm specifications using Google's Gemini API
 """
 
+import copy
 import io
 import logging
 import os
@@ -1008,77 +1009,44 @@ class GeminiFireAlarmAnalyzer:
                 return func(*args)
             except (GeminiPromptBlocked, GeminiRequestFailed) as e:
                 logger.warning(f"Step {func.__name__} failed/blocked: {e}")
-                return default or [] if "list" in str(type(default)) else {}
+                return copy.deepcopy(default)
             except Exception as e:
                 logger.error(f"Step {func.__name__} unexpected error: {e}")
-                return default
+                return copy.deepcopy(default)
 
-        # Step 1: Analyze cover pages for project info
-        logger.info("Analyzing cover pages...")
-        project_info = safe_step(
-            self._analyze_cover_pages, pages_text[:5], image_payload, image_pages, default={}
-        )
-
-        # Step 2: Identify fire alarm relevant pages (Rule-based, rarely fails)
+        # Step 1: Identify fire alarm relevant pages (Rule-based, rarely fails)
         logger.info("Identifying fire alarm pages...")
         fa_pages = self._identify_fire_alarm_pages(pages_text)
 
         # Step 3: Prepare a lean subset of pages to reduce token usage
         focused_pages = self._prioritize_pages_for_ai(pages_text, fa_pages)
 
-        # Step 4: Extract fire-alarm-specific code requirements
-        logger.info("Extracting fire alarm codes...")
-        codes = safe_step(
-            self._extract_code_requirements,
-            focused_pages,
-            image_payload,
-            image_pages,
-            default={'fire_alarm_codes': []},
-        )
-
-        # Step 5: Extract fire alarm notes from electrical pages
-        logger.info("Extracting fire alarm notes...")
-        fa_notes = safe_step(
-            self._extract_fire_alarm_notes,
+        logger.info("Running consolidated Gemini extraction...")
+        composite_defaults = self._composite_response_defaults()
+        composite_response = safe_step(
+            self._run_consolidated_extraction,
             focused_pages,
             fa_pages,
-            image_payload,
-            image_pages,
-            default=[],
-        )
-
-        # Step 6: Extract mechanical fire alarm devices
-        logger.info("Extracting mechanical FA devices...")
-        mechanical_devices = safe_step(
-            self._extract_mechanical_fa_devices,
-            focused_pages,
-            image_payload,
-            image_pages,
-            default={'duct_detectors': [], 'dampers': []}
-        )
-
-        # Step 7: Review device placement and CO detection
-        logger.info("Reviewing device placement and CO detection needs...")
-        device_layout_review = safe_step(
-            self._review_device_layout,
-            focused_pages,
-            fa_pages,
-            image_payload,
-            image_pages,
-            default={},
-        )
-
-        # Step 8: Extract specifications
-        logger.info("Extracting specifications...")
-        specifications = safe_step(
-            self._extract_specifications,
-            focused_pages,
-            fa_pages,
-            image_payload,
-            image_pages,
             spec_sections,
-            default={},
-        )
+            image_payload,
+            image_pages,
+            default=composite_defaults,
+        ) or composite_defaults
+
+        project_info = composite_response.get('project_info', {}) or {}
+        codes = composite_response.get('code_requirements', {}) or {'fire_alarm_codes': []}
+        fa_notes = composite_response.get('fire_alarm_notes', []) or []
+        mechanical_devices = composite_response.get('mechanical_devices', {}) or {
+            'duct_detectors': [],
+            'dampers': [],
+            'high_airflow_units': [],
+        }
+        device_layout_review = composite_response.get('device_layout_review', {}) or {
+            'primary_fa_page': {},
+            'unusual_placements': [],
+            'co_detection': {'needed': None, 'reason': None},
+        }
+        specifications = composite_response.get('specifications', {}) or {}
 
         # Step 9: If the documents show no FA content, derive code-based expectations
         logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
@@ -1141,6 +1109,123 @@ class GeminiFireAlarmAnalyzer:
 
         logger.info("Gemini analysis completed successfully (with potential partial blocks)")
         return results
+
+    def _composite_response_defaults(self) -> Dict[str, Any]:
+        """Default empty shell for consolidated Gemini extraction."""
+
+        return {
+            'project_info': {},
+            'code_requirements': {'fire_alarm_codes': []},
+            'fire_alarm_notes': [],
+            'mechanical_devices': {
+                'duct_detectors': [],
+                'dampers': [],
+                'high_airflow_units': [],
+            },
+            'device_layout_review': {
+                'primary_fa_page': {},
+                'unusual_placements': [],
+                'co_detection': {'needed': None, 'reason': None},
+            },
+            'specifications': {},
+        }
+
+    def _compile_page_context(
+        self,
+        pages_text: List[Dict[str, Any]],
+        max_chars: int = 24000,
+    ) -> str:
+        """Flatten prioritized pages into a single context block with page labels."""
+
+        blocks: List[str] = []
+        total = 0
+
+        for page in pages_text:
+            page_number = page.get('page_number')
+            text = (page.get('text') or '').strip()
+            if not text:
+                continue
+
+            block = f"PAGE {page_number}:\n{text}"
+            block_len = len(block)
+            if total + block_len > max_chars:
+                remaining = max_chars - total
+                if remaining <= 0:
+                    break
+                block = block[:remaining]
+                block_len = len(block)
+
+            blocks.append(block)
+            total += block_len
+
+            if total >= max_chars:
+                break
+
+        return "\n\n".join(blocks)
+
+    def _run_consolidated_extraction(
+        self,
+        pages_text: List[Dict[str, Any]],
+        fa_pages: List[int],
+        spec_sections: Optional[List[Dict[str, Any]]],
+        image_payload: Optional[List[Dict[str, Any]]],
+        image_pages: Optional[List[int]],
+    ) -> Dict[str, Any]:
+        """Combine project info, codes, notes, mechanical, and specs into one Gemini call."""
+
+        context_text = self._compile_page_context(pages_text)
+        spec_excerpt = self._compile_spec_excerpt(spec_sections)
+        image_note = self._image_guidance_text(image_payload, image_pages)
+
+        prompt = self._add_system_instruction(
+            f"""You are a fire alarm estimator AI. Using the consolidated project context and optional spec excerpts, extract
+all requested details in a single structured JSON response. Keep answers concise and only include information directly
+supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
+pages identified by rules: {fa_pages}.
+
+PROJECT PAGES (WITH PAGE LABELS):
+{context_text}
+
+SPEC EXCERPTS (IF ANY):
+{spec_excerpt or 'No spec excerpts provided.'}
+
+{image_note}
+
+Return a JSON object with these keys:
+- project_info: {{project_name, project_address, project_location, project_type, applicable_codes, fire_alarm_required, sprinkler_status, scope_summary, voice_required, project_number, owner, architect, engineer}}
+- code_requirements: {{fire_alarm_codes: array of strings, code_notes: string or null}}
+- fire_alarm_notes: array of objects {{page, note_type, content}}
+- mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
+- device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
+- specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
+
+Rules:
+- If a field is unknown, use null, an empty array, or an empty object as appropriate.
+- Do not invent devices or notes; prioritize project-specific content.
+- Keep strings short (<= 280 characters) and preserve key terminology from the source pages.
+- Use the same mechanical device shapes as prior prompts: include airflow_cfm and requires_duct_detector when stated.
+"""
+        )
+
+        default_response = self._composite_response_defaults()
+
+        try:
+            result = self._generate_model_text(prompt, images=image_payload)
+            if not result.text:
+                default_response['error'] = result.error
+                default_response['prompt_feedback'] = result.prompt_feedback
+                return default_response
+
+            parsed = self._parse_json(result.text, default_response)
+            return parsed if isinstance(parsed, dict) else default_response
+        except GeminiPromptBlocked:
+            raise
+        except GeminiRequestFailed:
+            raise
+        except Exception as exc:
+            logger.error("Error during consolidated extraction: %s", exc)
+            default_response['error'] = str(exc)
+            return default_response
 
     def analyze_pdf_text(self, pages_text: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Run Gemini analysis when page text has already been extracted."""
