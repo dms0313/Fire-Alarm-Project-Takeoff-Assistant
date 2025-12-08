@@ -171,8 +171,8 @@ NOTION_DATABASE_ID = os.environ.get(
 # =============================================================================
 # PROCESSING SETTINGS
 # =============================================================================
-TILE_SIZE = 640
-DPI = 90
+TILE_SIZE = 1024
+DPI = 150
 OVERLAP_PERCENT = 0.25
 DEFAULT_CONFIDENCE = 0.55
 MAX_WORKERS = 4
