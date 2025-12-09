@@ -6,6 +6,8 @@ import io
 import base64
 import tempfile
 import logging
+import time
+import uuid
 
 import fitz
 from PIL import Image
@@ -65,6 +67,27 @@ COLOR_PALETTE = [
     "#ffffb3",
 ]
 
+PREVIEW_CACHE_TTL_SECONDS = 900
+PREVIEW_CACHE_MAX_ENTRIES = 12
+preview_cache = {}
+
+
+def _cleanup_preview_cache():
+    """Remove expired preview entries to keep memory usage bounded."""
+    now = time.time()
+    expired_keys = [
+        key for key, value in preview_cache.items()
+        if now - value.get("created", 0) > PREVIEW_CACHE_TTL_SECONDS
+    ]
+
+    for key in expired_keys:
+        preview_cache.pop(key, None)
+
+    if len(preview_cache) > PREVIEW_CACHE_MAX_ENTRIES:
+        sorted_keys = sorted(preview_cache.items(), key=lambda item: item[1].get("created", 0))
+        for key, _ in sorted_keys[:-PREVIEW_CACHE_MAX_ENTRIES]:
+            preview_cache.pop(key, None)
+
 
 def register_preview_routes(app, analyzer):
     """Register preview-related routes"""
@@ -91,6 +114,8 @@ def register_preview_routes(app, analyzer):
 
             doc = fitz.open(pdf_path)
             pages = []
+            previews = []
+
             for page_num in range(len(doc)):
                 page = doc[page_num]
 
@@ -107,28 +132,55 @@ def register_preview_routes(app, analyzer):
                 preview_image.thumbnail((900, 900))
 
                 thumb_buffer = io.BytesIO()
-                thumbnail_image.save(thumb_buffer, format="JPEG", quality=88)
+                thumbnail_image.save(thumb_buffer, format="JPEG", quality=86)
                 thumbnail_b64 = base64.b64encode(thumb_buffer.getvalue()).decode()
 
                 preview_buffer = io.BytesIO()
-                preview_image.save(preview_buffer, format="JPEG", quality=92)
+                preview_image.save(preview_buffer, format="JPEG", quality=90)
                 preview_b64 = base64.b64encode(preview_buffer.getvalue()).decode()
 
                 pages.append({
                     'thumbnail': f'data:image/jpeg;base64,{thumbnail_b64}',
-                    'preview': f'data:image/jpeg;base64,{preview_b64}',
                     'page_number': page_num + 1
                 })
+
+                previews.append(f'data:image/jpeg;base64,{preview_b64}')
 
             doc.close()
             os.remove(pdf_path)
             os.rmdir(temp_dir)
 
-            return jsonify({'success': True, 'pages': pages, 'total_pages': len(pages)})
+            _cleanup_preview_cache()
+            preview_token = uuid.uuid4().hex
+            preview_cache[preview_token] = {
+                "previews": previews,
+                "created": time.time(),
+            }
+
+            return jsonify({
+                'success': True,
+                'pages': pages,
+                'total_pages': len(pages),
+                'preview_token': preview_token,
+            })
 
         except Exception as e:
             logger.error(f"Error generating previews: {str(e)}", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500
+
+    @app.route("/api/preview_pages/<preview_token>/<int:page_num>", methods=["GET"])
+    def get_preview_page(preview_token, page_num):
+        """Return the cached higher-resolution preview for a given page."""
+        _cleanup_preview_cache()
+        entry = preview_cache.get(preview_token)
+        if not entry:
+            return jsonify({'success': False, 'error': 'Preview token expired'}), 404
+
+        previews = entry.get("previews", [])
+        if page_num < 1 or page_num > len(previews):
+            return jsonify({'success': False, 'error': 'Invalid page number'}), 404
+
+        return jsonify({'success': True, 'preview': previews[page_num - 1], 'page_number': page_num})
 
     # ---------------------------------------------------------------------
     # DOWNLOAD ANNOTATED PAGE AS PDF
