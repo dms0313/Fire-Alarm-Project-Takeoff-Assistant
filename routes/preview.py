@@ -159,8 +159,6 @@ def register_preview_routes(app, analyzer):
                     'page_number': page_num + 1
                 })
 
-                previews.append(f'data:image/jpeg;base64,{preview_b64}')
-
             doc.close()
 
             _cleanup_preview_cache()
