@@ -72,6 +72,24 @@ PREVIEW_CACHE_MAX_ENTRIES = 12
 preview_cache = {}
 
 
+def _remove_preview_entry(key: str):
+    """Remove a cache entry and delete its temporary PDF."""
+    entry = preview_cache.pop(key, None)
+    if not entry:
+        return
+
+    pdf_path = entry.get("pdf_path")
+    temp_dir = entry.get("temp_dir")
+
+    try:
+        if pdf_path and os.path.exists(pdf_path):
+            os.remove(pdf_path)
+        if temp_dir and os.path.isdir(temp_dir):
+            os.rmdir(temp_dir)
+    except OSError:
+        logger.debug("Temporary preview directory already cleaned up", exc_info=True)
+
+
 def _cleanup_preview_cache():
     """Remove expired preview entries to keep memory usage bounded."""
     now = time.time()
@@ -81,12 +99,12 @@ def _cleanup_preview_cache():
     ]
 
     for key in expired_keys:
-        preview_cache.pop(key, None)
+        _remove_preview_entry(key)
 
     if len(preview_cache) > PREVIEW_CACHE_MAX_ENTRIES:
         sorted_keys = sorted(preview_cache.items(), key=lambda item: item[1].get("created", 0))
         for key, _ in sorted_keys[:-PREVIEW_CACHE_MAX_ENTRIES]:
-            preview_cache.pop(key, None)
+            _remove_preview_entry(key)
 
 
 def register_preview_routes(app, analyzer):
@@ -105,6 +123,11 @@ def register_preview_routes(app, analyzer):
         if pdf_file.filename == '':
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
 
+        temp_dir = None
+        pdf_path = None
+
+        preview_token = None
+
         try:
             logger.info(f"Processing PDF preview request for: {pdf_file.filename}")
 
@@ -114,30 +137,22 @@ def register_preview_routes(app, analyzer):
 
             doc = fitz.open(pdf_path)
             pages = []
-            previews = []
 
             for page_num in range(len(doc)):
                 page = doc[page_num]
 
-                # Generate a higher resolution preview for hover/zoom
-                mat = fitz.Matrix(220 / 72, 220 / 72)
+                # Generate a very lightweight thumbnail to keep the initial
+                # response fast, even for large PDFs.
+                mat = fitz.Matrix(120 / 72, 120 / 72)
                 pix = page.get_pixmap(matrix=mat, alpha=False)
 
                 base_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
                 thumbnail_image = base_image.copy()
-                thumbnail_image.thumbnail((320, 320))
-
-                preview_image = base_image.copy()
-                preview_image.thumbnail((900, 900))
+                thumbnail_image.thumbnail((220, 220))
 
                 thumb_buffer = io.BytesIO()
-                thumbnail_image.save(thumb_buffer, format="JPEG", quality=86)
+                thumbnail_image.save(thumb_buffer, format="JPEG", quality=78)
                 thumbnail_b64 = base64.b64encode(thumb_buffer.getvalue()).decode()
-
-                preview_buffer = io.BytesIO()
-                preview_image.save(preview_buffer, format="JPEG", quality=90)
-                preview_b64 = base64.b64encode(preview_buffer.getvalue()).decode()
 
                 pages.append({
                     'thumbnail': f'data:image/jpeg;base64,{thumbnail_b64}',
@@ -147,14 +162,14 @@ def register_preview_routes(app, analyzer):
                 previews.append(f'data:image/jpeg;base64,{preview_b64}')
 
             doc.close()
-            os.remove(pdf_path)
-            os.rmdir(temp_dir)
 
             _cleanup_preview_cache()
             preview_token = uuid.uuid4().hex
             preview_cache[preview_token] = {
-                "previews": previews,
                 "created": time.time(),
+                "pdf_path": pdf_path,
+                "temp_dir": temp_dir,
+                "previews": {},
             }
 
             return jsonify({
@@ -166,6 +181,16 @@ def register_preview_routes(app, analyzer):
 
         except Exception as e:
             logger.error(f"Error generating previews: {str(e)}", exc_info=True)
+            if preview_token:
+                _remove_preview_entry(preview_token)
+            else:
+                try:
+                    if pdf_path and os.path.exists(pdf_path):
+                        os.remove(pdf_path)
+                    if temp_dir and os.path.isdir(temp_dir):
+                        os.rmdir(temp_dir)
+                except Exception:
+                    logger.debug("Failed to clean temporary preview artifacts", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500
 
     @app.route("/api/preview_pages/<preview_token>/<int:page_num>", methods=["GET"])
@@ -176,11 +201,45 @@ def register_preview_routes(app, analyzer):
         if not entry:
             return jsonify({'success': False, 'error': 'Preview token expired'}), 404
 
-        previews = entry.get("previews", [])
-        if page_num < 1 or page_num > len(previews):
-            return jsonify({'success': False, 'error': 'Invalid page number'}), 404
+        previews = entry.get("previews", {})
+        if page_num in previews:
+            return jsonify({'success': True, 'preview': previews[page_num], 'page_number': page_num})
 
-        return jsonify({'success': True, 'preview': previews[page_num - 1], 'page_number': page_num})
+        pdf_path = entry.get("pdf_path")
+        if not pdf_path or not os.path.exists(pdf_path):
+            return jsonify({'success': False, 'error': 'Preview source expired'}), 404
+
+        doc = None
+        try:
+            doc = fitz.open(pdf_path)
+            if page_num < 1 or page_num > len(doc):
+                return jsonify({'success': False, 'error': 'Invalid page number'}), 404
+
+            page = doc[page_num - 1]
+            mat = fitz.Matrix(210 / 72, 210 / 72)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+
+            preview_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            preview_image.thumbnail((1000, 1000))
+
+            preview_buffer = io.BytesIO()
+            preview_image.save(preview_buffer, format="JPEG", quality=90)
+            preview_b64 = base64.b64encode(preview_buffer.getvalue()).decode()
+
+            previews[page_num] = f'data:image/jpeg;base64,{preview_b64}'
+            entry["previews"] = previews
+            preview_cache[preview_token] = entry
+
+            return jsonify({'success': True, 'preview': previews[page_num], 'page_number': page_num})
+
+        except Exception as e:
+            logger.error(f"Error generating preview for page {page_num}: {str(e)}", exc_info=True)
+            return jsonify({'success': False, 'error': 'Unable to generate preview'}), 500
+
+        finally:
+            if doc:
+                doc.close()
+
 
     # ---------------------------------------------------------------------
     # DOWNLOAD ANNOTATED PAGE AS PDF
