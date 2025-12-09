@@ -110,6 +110,7 @@ let pageSelectionCollapsed = true;
 let geminiCardIdCounts = {};
 let historyCollapsed = true;
 let notionConfigured = false;
+const pagePreviewCache = new Map();
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
 const ESTIMATED_GEMINI_DURATION_SECONDS = 90;
@@ -387,6 +388,53 @@ function updatePageHoverMagnifier(event) {
     }
 }
 
+function getPagePreviewCacheKey(page) {
+    if (!page || !page.previewToken || !page.page_number) {
+        return null;
+    }
+    return `${page.previewToken}-${page.page_number}`;
+}
+
+function loadPagePreview(page) {
+    if (!page || page.preview) {
+        return Promise.resolve(page ? page.preview : null);
+    }
+
+    const cacheKey = getPagePreviewCacheKey(page);
+    if (!cacheKey) {
+        return Promise.resolve(null);
+    }
+
+    const cached = pagePreviewCache.get(cacheKey);
+    if (cached?.preview) {
+        page.preview = cached.preview;
+        return Promise.resolve(cached.preview);
+    }
+
+    if (cached?.promise) {
+        return cached.promise;
+    }
+
+    const previewPromise = fetch(`/api/preview_pages/${page.previewToken}/${page.page_number}`)
+        .then((response) => response.json())
+        .then((data) => {
+            if (!data.success || !data.preview) {
+                throw new Error('Preview not available');
+            }
+
+            page.preview = data.preview;
+            pagePreviewCache.set(cacheKey, { preview: data.preview });
+            return data.preview;
+        })
+        .catch((error) => {
+            console.error('Error loading preview:', error);
+            return null;
+        });
+
+    pagePreviewCache.set(cacheKey, { promise: previewPromise });
+    return previewPromise;
+}
+
 function showPageHoverPreview(page, event) {
     if (!pageHoverPreview || !pageHoverImage || !pageHoverLabel) {
         return;
@@ -400,6 +448,15 @@ function showPageHoverPreview(page, event) {
     pageHoverPreview.setAttribute('aria-hidden', 'false');
     positionPageHoverPreview(event?.currentTarget);
     updatePageHoverMagnifier(event);
+
+    if (!page.preview) {
+        loadPagePreview(page).then((fullPreview) => {
+            if (fullPreview && !pageHoverPreview.classList.contains('hidden')) {
+                pageHoverImage.src = fullPreview;
+                updatePageHoverMagnifier(event);
+            }
+        });
+    }
 }
 
 function handleFiles(files) {
@@ -1163,11 +1220,9 @@ function generatePagePreviews(file) {
     const formData = new FormData();
     formData.append('pdf', file);
 
-    if (additionalFiles && additionalFiles.length > 0) {
-        additionalFiles.forEach((attachment) => {
-            formData.append('additional_files', attachment);
-        });
-    }
+    // Keep preview requests lightweight: we only need the main PDF to build
+    // thumbnails. Sending attachments here needlessly increases payload size
+    // and can trigger server-side 413 errors on large optional uploads.
 
     if (pageSelection) {
         pageSelection.style.display = 'none';
@@ -1178,10 +1233,11 @@ function generatePagePreviews(file) {
         method: 'POST',
         body: formData,
     })
-        .then((response) => response.json())
-        .then((data) => {
-            if (!data.success) {
-                showError('Error generating page previews');
+        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                const errorMessage = data?.error || 'Error generating page previews';
+                showError(errorMessage);
                 return;
             }
 
@@ -1191,14 +1247,20 @@ function generatePagePreviews(file) {
             }
             pageGrid.innerHTML = '';
 
+            const previewToken = data.preview_token || null;
+
             data.pages.forEach((page) => {
+                const pageData = {
+                    ...page,
+                    previewToken,
+                };
                 const pageThumb = document.createElement('div');
                 pageThumb.className = 'page-thumb';
                 pageThumb.innerHTML = `
                     <img src="${page.thumbnail}" alt="Page ${page.page_number}">
                     <div class="page-number">Page ${page.page_number}</div>
                 `;
-                pageThumb.addEventListener('mouseenter', (event) => showPageHoverPreview(page, event));
+                pageThumb.addEventListener('mouseenter', (event) => showPageHoverPreview(pageData, event));
                 pageThumb.addEventListener('mousemove', (event) => {
                     positionPageHoverPreview(event.currentTarget);
                     updatePageHoverMagnifier(event);
