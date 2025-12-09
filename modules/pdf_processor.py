@@ -101,7 +101,7 @@ class PDFProcessor:
                     # Render page to image
                     mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
                     try:
-                        pix = page.get_pixmap(matrix=mat)
+                        pix = page.get_pixmap(matrix=mat, alpha=False)
                         if not pix or pix.width == 0 or pix.height == 0:
                             logger.warning(f"Invalid pixmap on page {page_num + 1}, skipping")
                             continue

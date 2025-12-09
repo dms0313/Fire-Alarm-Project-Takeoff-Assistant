@@ -96,7 +96,7 @@ def register_preview_routes(app, analyzer):
 
                 # Generate a higher resolution preview for hover/zoom
                 mat = fitz.Matrix(220 / 72, 220 / 72)
-                pix = page.get_pixmap(matrix=mat)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
 
                 base_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
@@ -180,7 +180,7 @@ def register_preview_routes(app, analyzer):
 
             page = doc[page_num - 1]
             mat = fitz.Matrix(render_dpi / 72, render_dpi / 72)
-            pix = page.get_pixmap(matrix=mat)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
             image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
 
             # Compute page size in inches (PDF units are 1/72 inch)
