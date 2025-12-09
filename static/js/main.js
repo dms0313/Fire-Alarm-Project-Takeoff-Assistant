@@ -1220,11 +1220,9 @@ function generatePagePreviews(file) {
     const formData = new FormData();
     formData.append('pdf', file);
 
-    if (additionalFiles && additionalFiles.length > 0) {
-        additionalFiles.forEach((attachment) => {
-            formData.append('additional_files', attachment);
-        });
-    }
+    // Keep preview requests lightweight: we only need the main PDF to build
+    // thumbnails. Sending attachments here needlessly increases payload size
+    // and can trigger server-side 413 errors on large optional uploads.
 
     if (pageSelection) {
         pageSelection.style.display = 'none';
@@ -1235,10 +1233,11 @@ function generatePagePreviews(file) {
         method: 'POST',
         body: formData,
     })
-        .then((response) => response.json())
-        .then((data) => {
-            if (!data.success) {
-                showError('Error generating page previews');
+        .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok || !data.success) {
+                const errorMessage = data?.error || 'Error generating page previews';
+                showError(errorMessage);
                 return;
             }
 
