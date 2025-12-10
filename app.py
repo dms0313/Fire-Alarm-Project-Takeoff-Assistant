@@ -1,48 +1,4 @@
 """Fire Alarm PDF Analyzer - Main Application"""
-# --- PyTorch 2.6 Compatibility Patch (global) ---
-import torch
-from torch import serialization as _serialization
-
-# Force-disable weights_only (trusted local checkpoint)
-__orig_load = torch.load
-def _safe_load_override(*args, **kwargs):
-    kwargs["weights_only"] = False
-    return __orig_load(*args, **kwargs)
-torch.load = _safe_load_override
-_serialization.load = _safe_load_override
-# --- End Patch ---
-
-# --- Ultralytics DFLoss shim for older checkpoints ---
-import torch.nn as nn
-try:
-    import ultralytics.utils.loss as yloss
-    if not hasattr(yloss, "DFLoss"):
-        class DFLoss(nn.Module):
-            def __init__(self, *args, **kwargs): super().__init__()
-            def forward(self, *args, **kwargs):
-                raise RuntimeError("DFLoss shim was called during inference (should not happen).")
-        yloss.DFLoss = DFLoss
-except Exception:
-    # If ultralytics isn't imported yet, we'll set the shim later in local_yolo_detector too.
-    pass
-# --- End Shim ---
-
-
-# --- PyTorch 2.6 Compatibility Patch ---
-import torch
-from torch import serialization
-
-# Monkey-patch torch.load to force full model deserialization
-_original_torch_load = torch.load
-
-def _safe_load_override(*args, **kwargs):
-    # Force-disable weights_only protection — trusted local checkpoint
-    kwargs["weights_only"] = False
-    return _original_torch_load(*args, **kwargs)
-
-torch.load = _safe_load_override
-serialization.load = _safe_load_override
-# --- End Patch ---
 
 import logging
 import os
@@ -68,6 +24,57 @@ from modules import (
 # =============================================================================
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# OPTIONAL TORCH PATCHES (WINDOWS/LINUX FRIENDLY)
+# =============================================================================
+_torch_import_error: str | None = None
+try:  # noqa: SIM105 - explicit try/except to capture import errors
+    import torch
+except Exception as exc:  # pragma: no cover - platform-specific import failures
+    torch = None  # type: ignore[assignment]
+    _torch_import_error = str(exc)
+    logger.warning(
+        "PyTorch could not be imported; local detection will be disabled. (%s)",
+        _torch_import_error,
+    )
+
+if torch is not None:
+    from torch import serialization as _serialization
+
+    # Force-disable weights_only (trusted local checkpoint)
+    _original_torch_load = torch.load
+
+    def _safe_load_override(*args, **kwargs):
+        kwargs["weights_only"] = False
+        return _original_torch_load(*args, **kwargs)
+
+    torch.load = _safe_load_override
+    _serialization.load = _safe_load_override
+
+    # --- Ultralytics DFLoss shim for older checkpoints ---
+    import torch.nn as nn
+
+    try:
+        import ultralytics.utils.loss as yloss
+
+        if not hasattr(yloss, "DFLoss"):
+            class DFLoss(nn.Module):
+                def __init__(self, *args, **kwargs):  # noqa: D401
+                    """Minimal shim for unsupported checkpoints."""
+
+                    super().__init__()
+
+                def forward(self, *args, **kwargs):  # pragma: no cover - defensive
+                    raise RuntimeError(
+                        "DFLoss shim was called during inference (should not happen)."
+                    )
+
+            yloss.DFLoss = DFLoss
+    except Exception:
+        # If ultralytics isn't imported yet, we'll set the shim later in local_yolo_detector too.
+        pass
 
 
 # =============================================================================
