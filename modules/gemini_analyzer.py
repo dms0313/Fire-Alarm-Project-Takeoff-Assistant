@@ -11,7 +11,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 
 import google.generativeai as genai
@@ -302,7 +302,8 @@ class GeminiFireAlarmAnalyzer:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                request_content = prompt if not images else [prompt, *images]
+                text_part: Union[str, Dict[str, str]] = {"text": prompt}
+                request_content = text_part if not images else [text_part, *images]
                 response = self.model.generate_content(
                     request_content,
                     request_options={"timeout": self.request_timeout},
@@ -646,70 +647,15 @@ class GeminiFireAlarmAnalyzer:
     def _filter_spec_book_sections(
         self, spec_pages: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        """Keep only the spec book pages that reference fire alarm scope."""
+        """Keep only the Division 28 addressable fire alarm control panel section."""
 
         if not spec_pages:
             return []
 
-        division_pattern = re.compile(r"\b28\s*(?:\d{2}|\d{2}\.\d{2}|\d{2}\.\d{2}\.\d{2})")
-        fire_alarm_section_pattern = re.compile(
-            r"\b28\s*31\s*11\b|\b283111\b|addressable\s+fire\s+alarm\s+system",
-            re.IGNORECASE,
-        )
-        fire_alarm_terms = [
-            "fire alarm",
-            "mass notification",
-            "notification appliance",
-            "initiating device",
-            "voice evacuation",
-            "life safety",
-            "smoke detector",
-            "pull station",
-            "alarm control",
-            "fa system",
-            "facp",
-            "co",
-            "fire smoke",
-            "addressable",
-            "nac",
-            "duct smoke detector",
-        ]
-        manufacturer_terms = [
-            "approved manufacturers",
-            "acceptable manufacturers",
-            "acceptable products",
-            "manufacturers",
-            "manufacturer list",
-            "approved products",
-            "as manufactured",
-            "manufactured by",
-            "systems as manufactured",
-            "one of the following",
-            "notifier",
-            "simplex",
-            "simplexgrinnell",
-            "gamewell",
-            "gamewell-fci",
-            "edwards",
-            "est",
-            "siemens",
-            "fike",
-            "potter",
-            "fire-lite",
-            "fire lite",
-            "kidde",
-            "bosch",
-            "vigilant",
-            "cooper",
-            "wheelock",
-            "tyco",
-            "johnson controls",
-            "autocall",
-            "mircom",
-            "securiton",
-        ]
-        manufacturer_phrase_pattern = re.compile(
-            r"approved\s+(?:manufacturers|products)|acceptable\s+(?:manufacturers|products)|manufactured\s+by|systems\s+as\s+manufactured",
+        division_28_pattern = re.compile(r"division\s*28|\b28\s*\d{2}\b", re.IGNORECASE)
+        addressable_panel_pattern = re.compile(
+            r"addressable\s+fire\s+alarm\s+control\s+(?:panel|unit)"
+            r"|addressable\s+facp",
             re.IGNORECASE,
         )
 
@@ -717,96 +663,56 @@ class GeminiFireAlarmAnalyzer:
             spec_pages,
             key=lambda page: (page.get("page_number") is None, page.get("page_number")),
         )
-        division_numbers = set()
-        candidates: List[Dict[str, Any]] = []
 
-        candidate_by_page: Dict[Any, Dict[str, Any]] = {}
+        division_28_indices: List[int] = []
+        panel_indices: List[int] = []
 
-        for page in sorted_pages:
+        for idx, page in enumerate(sorted_pages):
             text = page.get("text", "") or ""
             lower = text.lower()
-            page_number = page.get("page_number")
 
-            has_division = bool(division_pattern.search(lower))
-            has_fire_alarm = any(term in lower for term in fire_alarm_terms)
-            has_manufacturers = manufacturer_phrase_pattern.search(lower) is not None or any(
-                term in lower for term in manufacturer_terms
-            )
+            if division_28_pattern.search(lower):
+                division_28_indices.append(idx)
 
-            if has_division:
-                division_numbers.add(page_number)
+            if addressable_panel_pattern.search(lower):
+                panel_indices.append(idx)
 
-            candidate = {
-                "page_number": page_number,
-                "text": text,
-                "has_division": has_division,
-                "has_fire_alarm": has_fire_alarm,
-                "has_manufacturers": has_manufacturers,
-                "adjacent_to_division": False,
-            }
+        # Favor the addressable control panel subsection. If found, capture nearby pages for context.
+        focus_indices: set[int] = set(panel_indices)
+        adjacency_window = 2
+        for idx in list(panel_indices):
+            start = max(0, idx - adjacency_window)
+            end = min(len(sorted_pages) - 1, idx + adjacency_window)
+            focus_indices.update(range(start, end + 1))
 
-            candidate_by_page[page_number] = candidate
-            candidates.append(candidate)
-
-        if division_numbers:
-            index_by_page = {
-                page.get("page_number"): idx for idx, page in enumerate(sorted_pages)
-            }
-            adjacency_window = 3
-            for div_page in division_numbers:
-                idx = index_by_page.get(div_page)
-                if idx is None:
-                    continue
-                start = max(0, idx - adjacency_window)
-                end = min(len(sorted_pages) - 1, idx + adjacency_window)
-                for neighbor in sorted_pages[start : end + 1]:
-                    neighbor_number = neighbor.get("page_number")
-                    candidate = candidate_by_page.get(neighbor_number)
-                    if candidate:
-                        candidate["adjacent_to_division"] = True
-
-        relevant_candidates = [
-            candidate
-            for candidate in candidates
-            if candidate["has_division"]
-            or candidate["has_fire_alarm"]
-            or candidate["has_manufacturers"]
-            or candidate["adjacent_to_division"]
-        ]
-
-        prioritized_candidates = sorted(
-            relevant_candidates,
-            key=lambda candidate: (
-                -int(candidate["has_manufacturers"]),
-                -int(candidate["has_division"]),
-                -int(candidate["has_fire_alarm"]),
-                -int(candidate["adjacent_to_division"]),
-                candidate.get("page_number") is None,
-                candidate.get("page_number") or 0,
-            ),
-        )
+        # If we did not see an explicit panel header, fall back to Division 28 pages that mention fire alarm terms.
+        if not focus_indices and division_28_indices:
+            fire_alarm_terms = ["fire alarm", "facp", "notification", "initiating device"]
+            for idx in division_28_indices:
+                text = (sorted_pages[idx].get("text") or "").lower()
+                if any(term in text for term in fire_alarm_terms):
+                    focus_indices.add(idx)
 
         filtered: List[Dict[str, Any]] = []
-        max_pages = 24
-
-        for candidate in prioritized_candidates:
-            if len(filtered) >= max_pages:
-                break
+        for idx in sorted(focus_indices):
+            page = sorted_pages[idx]
             filtered.append(
                 {
-                    "page_number": candidate.get("page_number"),
-                    "text": candidate.get("text", "") or "",
+                    "page_number": page.get("page_number"),
+                    "text": page.get("text", "") or "",
                 }
             )
+            if len(filtered) >= 12:
+                break
 
         if filtered:
             logger.info(
-                "Prepared %s spec book pages for Gemini (fire alarm/manufacturer focus): %s",
+                "Prepared %s Division 28 spec pages for Gemini (addressable FACP focus): %s",
                 len(filtered),
                 ", ".join(str(p.get("page_number")) for p in filtered[:15]),
             )
         else:
-            logger.info("No fire-alarm-related sections found in spec book; skipping upload context.")
+            logger.info("No Division 28 addressable FACP sections found in spec book; skipping spec context.")
 
         return filtered
 
@@ -873,72 +779,85 @@ class GeminiFireAlarmAnalyzer:
         if not pages_text:
             return []
 
-        cover_pages = [page["page_number"] for page in pages_text[:3]]
+        cover_pages = [
+            page.get("page_number")
+            for page in pages_text[:3]
+            if page.get("page_number") is not None
+        ]
 
-        fire_alarm_section_pages = self._find_fire_alarm_section_pages(pages_text)
+        prioritized_candidates: List[int] = []
+
+        for page in pages_text:
+            text_lower = (page.get("text") or "").lower()
+            page_number = page.get("page_number")
+            if page_number is None:
+                continue
+
+            if self._is_electrical_power_or_special_system_page(text_lower):
+                prioritized_candidates.append(page_number)
+                continue
+
+            if self._has_unique_fire_alarm_details(text_lower):
+                prioritized_candidates.append(page_number)
 
         ordered_unique = self._unique_page_order([
             *cover_pages,
-            *fire_alarm_section_pages,
+            *prioritized_candidates,
         ])[: self.max_image_pages]
 
         logger.info(
-            "Attaching %s page images to Gemini (cover + fire alarm sections): %s",
+            "Attaching %s page images to Gemini (cover + electrical/FA detail pages): %s",
             len(ordered_unique),
             ordered_unique,
         )
         return ordered_unique
+
+    @staticmethod
+    def _is_electrical_power_or_special_system_page(text_lower: str) -> bool:
+        """Return True for electrical power plan or special systems pages."""
+
+        electrical_markers = [
+            "electrical",
+            "power plan",
+            "power & signal",
+            "power/signal",
+            "special systems",
+        ]
+
+        has_power_or_special = any(keyword in text_lower for keyword in electrical_markers)
+        has_plan_context = "plan" in text_lower or "sheet" in text_lower
+
+        return has_power_or_special and has_plan_context
+
+    @staticmethod
+    def _has_unique_fire_alarm_details(text_lower: str) -> bool:
+        """Detect pages that call out unique fire alarm details worth imaging."""
+
+        detail_keywords = [
+            "fire alarm detail",
+            "fa detail",
+            "fire alarm riser",
+            "fa riser",
+            "sequence of operations",
+            "device schedule",
+            "notification schedule",
+            "nac schedule",
+            "fire alarm control panel",
+            "addressable panel",
+            "fa panel",
+            "fire alarm layout",
+            "riser diagram",
+        ]
+
+        return any(keyword in text_lower for keyword in detail_keywords)
 
     def _find_fire_alarm_section_pages(
         self, pages_text: List[Dict[str, Any]]
     ) -> List[int]:
         """Locate pages that belong to the fire alarm section for image transmission."""
 
-        if not pages_text:
-            return []
-
-        fire_alarm_keywords = [
-            "fire alarm",
-            "fire-alarm",
-            "fire alarm riser",
-            "fire alarm notes",
-            "fire alarm general notes",
-            "notification device",
-            "horn strobe",
-            "speaker strobe",
-            "pull station",
-            "annunciator",
-            "ann",
-            "duct smoke detector",
-            "smoke sensor"
-        ]
-
-        electrical_section_keywords = [
-            "electrical",
-            "power plan",
-            "special systems",
-            "one-line",
-            "riser diagram",
-        ]
-
-        candidate_pages: List[int] = []
-
-        for page in pages_text:
-            page_text = page.get("text", "")
-            page_number = page.get("page_number")
-            if not page_text or page_number is None:
-                continue
-
-            text_lower = page_text.lower()
-
-            has_fire_alarm_terms = any(keyword in text_lower for keyword in fire_alarm_keywords)
-            has_section_context = any(keyword in text_lower for keyword in electrical_section_keywords)
-            has_fa_sheet_id = bool(re.search(r"\bfa[-\s]?\d{1,3}\b", text_lower))
-
-            if has_fire_alarm_terms or (has_section_context and has_fa_sheet_id):
-                candidate_pages.append(page_number)
-
-        return self._unique_page_order(candidate_pages)
+        # Deprecated in favor of _select_pages_for_image_transmission's refined rules.
+        return self._select_pages_for_image_transmission(pages_text)
 
     def _build_image_payload(self, pdf_path: str, page_numbers: List[int]) -> List[Dict[str, Any]]:
         """Render selected pages to downscaled JPEG bytes for Gemini vision context."""
@@ -1178,7 +1097,8 @@ class GeminiFireAlarmAnalyzer:
             f"""You are a fire alarm estimator AI. Using the consolidated project context and optional spec excerpts, extract
 all requested details in a single structured JSON response. Keep answers concise and only include information directly
 supported by the provided pages. Always cite page numbers when referencing notes, devices, or layouts. Fire alarm-focused
-pages identified by rules: {fa_pages}.
+pages identified by rules: {fa_pages}. Drawings are the primary source—use spec excerpts only as backup context and only for
+Division 28 addressable fire alarm control panel requirements.
 
 PROJECT PAGES (WITH PAGE LABELS):
 {context_text}
