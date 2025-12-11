@@ -3,7 +3,7 @@ PDF Processing Module - Handles PDF to image conversion and tiling
 """
 import logging
 import re
-from typing import List, Tuple, Dict
+from typing import Dict, Iterator, List, Tuple
 import fitz  # PyMuPDF
 from PIL import Image
 import numpy as np
@@ -126,6 +126,60 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error converting PDF to images: {str(e)}", exc_info=True)
             return []
+
+    def iter_pdf_images(
+        self, pdf_path: str, selected_pages: List[int] | None = None
+    ) -> Iterator[tuple[int, Image.Image]]:
+        """Yield pages as PIL images one-at-a-time to keep memory usage low.
+
+        Args:
+            pdf_path: Path to the PDF file
+            selected_pages: Optional list of 1-based page numbers to process
+
+        Yields:
+            Tuples of (page_number, PIL Image)
+        """
+        try:
+            logger.info("Opening PDF for streaming conversion: %s", pdf_path)
+            with fitz.open(pdf_path) as doc:
+                total_pages = len(doc)
+
+                if selected_pages:
+                    pages_to_process = [p - 1 for p in selected_pages if 1 <= p <= total_pages]
+                    logger.info("Streaming selected pages: %s", [p + 1 for p in pages_to_process])
+                else:
+                    pages_to_process = range(total_pages)
+                    logger.info("Streaming all %s pages", total_pages)
+
+                for page_num in pages_to_process:
+                    try:
+                        page = doc[page_num]
+                        page_size = page.rect.width * page.rect.height
+                        if page_size == 0:
+                            logger.warning("Page %s has zero size, skipping", page_num + 1)
+                            continue
+
+                        mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
+                        pix = page.get_pixmap(matrix=mat, alpha=False)
+                        if not pix or pix.width == 0 or pix.height == 0:
+                            logger.warning("Invalid pixmap on page %s, skipping", page_num + 1)
+                            continue
+
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        logger.info(
+                            "Streamed page %s/%s (%sx%s)",
+                            page_num + 1,
+                            total_pages,
+                            img.width,
+                            img.height,
+                        )
+                        yield page_num + 1, img
+                    except Exception as page_err:  # pragma: no cover - defensive logging
+                        logger.error("Error streaming page %s: %s", page_num + 1, page_err)
+                        continue
+        except Exception as exc:
+            logger.error("Error streaming PDF pages from %s: %s", pdf_path, exc, exc_info=True)
+            return
     
     @staticmethod
     def is_blank_tile(tile_image: Image.Image, threshold: float = 0.95, 

@@ -589,23 +589,15 @@ def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
         return {'success': False, 'error': 'Local detector not initialized'}
 
     try:
-        # Convert PDF to images
-        images = analyzer.pdf_processor.pdf_to_images(pdf_path, selected_pages)
-        if not images:
-            return {'success': False, 'error': 'Failed to convert PDF'}
-
-        logger.info(f"Converted {len(images)} pages")
-
-        # Analyze each page
         page_analyses = []
         total_devices = []
+        pages_processed = 0
 
-        # Use the correct page numbers if a selection was made
-        page_numbers_to_process = selected_pages if selected_pages else range(1, len(images) + 1)
-
-        for i, image in enumerate(images):
-            page_num = page_numbers_to_process[i]  # Get the original page number
-            logger.info(f"Processing page {page_num} ({i+1}/{len(images)} selected)")
+        for page_index, (page_num, image) in enumerate(
+            analyzer.pdf_processor.iter_pdf_images(pdf_path, selected_pages), start=1
+        ):
+            pages_processed += 1
+            logger.info(f"Processing page {page_num} ({page_index} processed)")
 
             # Create tiles
             tiles, tile_stats = analyzer.pdf_processor.create_tiles(
@@ -675,11 +667,15 @@ def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
 
             page_analyses.append(page_analysis.to_dict())
 
+        if pages_processed == 0:
+            logger.error("Failed to stream any pages from PDF: %s", pdf_path)
+            return {'success': False, 'error': 'Failed to convert PDF'}
+
         # Compile results
         results = {
             'success': True,
             'pdf_path': pdf_path,
-            'total_pages_scanned': len(images),
+            'total_pages_scanned': pages_processed,
             'pages_with_devices': sum(1 for p in page_analyses if p['devices']),
             'total_devices': len(total_devices),
             'device_summary': _summarize_devices(total_devices),
