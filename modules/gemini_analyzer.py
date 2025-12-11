@@ -2235,8 +2235,11 @@ Return JSON with:
         if device_layout_review:
             layout_bullets: List[str] = []
 
+            if not isinstance(device_layout_review, dict):
+                device_layout_review = {}
+
             primary_page = device_layout_review.get('primary_fa_page') or {}
-            if primary_page:
+            if isinstance(primary_page, dict) and primary_page:
                 page = primary_page.get('page')
                 reason = primary_page.get('reason') or primary_page.get('note')
                 text = f"Most fire alarm devices shown on page {page if page is not None else '?'}"
@@ -2245,19 +2248,24 @@ Return JSON with:
                 layout_bullets.append(text)
 
             for unusual in device_layout_review.get('unusual_placements', []) or []:
-                page = unusual.get('page')
-                device_label = unusual.get('device_type') or 'Device'
-                placement = unusual.get('placement')
-                reason = unusual.get('reason') or unusual.get('impact')
-                prefix = f"Page {page}: " if page is not None else ""
-                parts = [f"Unusual placement for {device_label}"]
-                if placement:
-                    parts.append(str(placement))
-                if reason:
-                    parts.append(str(reason))
-                layout_bullets.append(prefix + " - ".join(parts))
+                if isinstance(unusual, dict):
+                    page = unusual.get('page')
+                    device_label = unusual.get('device_type') or 'Device'
+                    placement = unusual.get('placement')
+                    reason = unusual.get('reason') or unusual.get('impact')
+                    prefix = f"Page {page}: " if page is not None else ""
+                    parts = [f"Unusual placement for {device_label}"]
+                    if placement:
+                        parts.append(str(placement))
+                    if reason:
+                        parts.append(str(reason))
+                    layout_bullets.append(prefix + " - ".join(parts))
+                else:
+                    layout_bullets.append(str(unusual))
 
             co_detection = device_layout_review.get('co_detection') or {}
+            if not isinstance(co_detection, dict):
+                co_detection = {}
             co_needed = co_detection.get('needed')
             co_reason = co_detection.get('reason')
             if co_needed:
