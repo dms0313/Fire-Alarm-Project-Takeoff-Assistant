@@ -1141,15 +1141,15 @@ Return a JSON object with these keys:
 - mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
 - device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
 - specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
-- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (avoid templated questions)
-- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise)
+- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
+- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
 
 Rules:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
 - Do not invent devices or notes; prioritize project-specific content.
 - Keep strings short (<= 280 characters) and preserve key terminology from the source pages.
 - Use the same mechanical device shapes as prior prompts: include airflow_cfm and requires_duct_detector when stated.
-- Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
+- Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful. If there are no project-specific pitfalls or notes, leave the arrays empty instead of adding placeholders.
 """
         )
 
@@ -2265,61 +2265,16 @@ Return JSON with:
                     }
                 )
 
-        # Pitfalls and gaps
-        add_pitfall('Fire alarm / life safety codes not cited—confirm editions with AHJ.' if not fire_codes else None)
-        add_pitfall(
-            'Fire alarm required status not stated—confirm with project documents.'
-            if not project_info.get('fire_alarm_required')
-            else None
-        )
-        add_pitfall(
-            'Sprinkler monitoring expectations unclear—verify whether system is sprinkled.'
-            if not project_info.get('sprinkler_status')
-            else None
-        )
-
-        co_detection = (device_layout_review or {}).get('co_detection') or {}
-        if not co_detection.get('needed'):
-            add_pitfall('CO detection requirement not stated—confirm if CO monitoring is required.')
-        elif str(co_detection.get('needed')).lower() in {'unknown', 'unsure'}:
-            add_pitfall('CO detection need is unclear—verify with mechanical plans and code path.')
-
-        for label, message in [
-            ('SYSTEM_TYPE', 'System type (addressable vs. conventional) not specified.'),
-            ('COMMUNICATION', 'Communication path not defined (cellular/phone/network).'),
-            ('MONITORING', 'Central station monitoring requirements not documented.'),
-            ('AUDIO_SYSTEM', 'Voice evacuation or audio requirement is unclear.'),
-            (
-                'APPROVED_MANUFACTURERS',
-                'Approved manufacturers list missing—spec may be open or needs confirmation.',
-            ),
-        ]:
-            if not self._get_spec_value(specifications, label):
-                add_pitfall(message)
-
-        # Control panel and existing systems
-        control_panel = self._get_spec_value(specifications, 'CONTROL_PANEL')
-        if not control_panel:
-            add_pitfall('Control panel manufacturer/model not identified—verify if existing panel to remain.')
-
-        if not fire_alarm_notes:
-            add_estimator_note('No project-specific fire alarm notes captured—check drawings for keyed notes.')
-
-        if not fire_alarm_notes and code_based_expectations:
-            scope = code_based_expectations.get('expected_scope') or []
-            if scope:
-                add_estimator_note('Drawings lack FA scope—use code-based expectations until design is issued.')
-                for item in scope[:3]:
-                    add_estimator_note(f"Code-expected: {item}")
+        # Pitfalls and estimator notes are provided directly by Gemini responses or
+        # code-based expectations. Avoid injecting template questions or boilerplate
+        # so the content stays project-specific.
 
         if code_based_expectations:
             for advisory in code_based_expectations.get('notes', []):
                 add_estimator_note(advisory)
 
-        if mech_bullets:
-            add_estimator_note('Coordinate duct detectors and dampers with mechanical contractor for relay points.')
-        else:
-            add_pitfall('Mechanical integration devices (duct detectors/dampers) not found—confirm if required.')
+            for item in code_based_expectations.get('expected_scope', []) or []:
+                add_estimator_note(f"Code-expected scope: {item}")
 
         sections_obj = {'estimating_notes': estimating_notes}
 
