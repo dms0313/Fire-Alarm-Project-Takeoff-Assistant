@@ -980,6 +980,8 @@ class GeminiFireAlarmAnalyzer:
             'co_detection': {'needed': None, 'reason': None},
         }
         specifications = composite_response.get('specifications', {}) or {}
+        possible_pitfalls = composite_response.get('possible_pitfalls', []) or []
+        estimating_notes = composite_response.get('estimating_notes', []) or []
 
         # Step 9: If the documents show no FA content, derive code-based expectations
         logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
@@ -1009,6 +1011,8 @@ class GeminiFireAlarmAnalyzer:
             mechanical_devices,
             device_layout_review,
             code_based_expectations,
+            possible_pitfalls,
+            estimating_notes,
         )
 
         results = {
@@ -1024,6 +1028,8 @@ class GeminiFireAlarmAnalyzer:
             'specifications': specifications,
             'spec_book_context': None,
             'structured_summary': structured_summary,
+            'possible_pitfalls': possible_pitfalls,
+            'estimating_notes': estimating_notes,
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat(),
             'code_based_expectations': code_based_expectations,
@@ -1062,6 +1068,8 @@ class GeminiFireAlarmAnalyzer:
                 'co_detection': {'needed': None, 'reason': None},
             },
             'specifications': {},
+            'possible_pitfalls': [],
+            'estimating_notes': [],
         }
 
     def _compile_page_context(
@@ -1133,12 +1141,15 @@ Return a JSON object with these keys:
 - mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
 - device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
 - specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
+- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (avoid templated questions)
+- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise)
 
 Rules:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
 - Do not invent devices or notes; prioritize project-specific content.
 - Keep strings short (<= 280 characters) and preserve key terminology from the source pages.
 - Use the same mechanical device shapes as prior prompts: include airflow_cfm and requires_duct_detector when stated.
+- Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
 """
         )
 
@@ -2060,6 +2071,8 @@ Return JSON with:
         mechanical_devices: Dict[str, List[Dict[str, Any]]],
         device_layout_review: Optional[Dict[str, Any]] = None,
         code_based_expectations: Optional[Dict[str, Any]] = None,
+        possible_pitfalls: Optional[List[str]] = None,
+        provided_estimating_notes: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Create a structured summary with pitfalls and estimator notes."""
 
@@ -2067,13 +2080,23 @@ Return JSON with:
         pitfalls: List[str] = []
         estimating_notes: List[str] = []
 
+        def add_unique(target: List[str], message: Optional[str]):
+            if message and isinstance(message, str):
+                text = message.strip()
+                if text and text not in target:
+                    target.append(text)
+
         def add_pitfall(message: Optional[str]):
-            if message and message.strip():
-                pitfalls.append(message.strip())
+            add_unique(pitfalls, message)
 
         def add_estimator_note(message: Optional[str]):
-            if message and message.strip():
-                estimating_notes.append(message.strip())
+            add_unique(estimating_notes, message)
+
+        for pitfall in possible_pitfalls or []:
+            add_pitfall(pitfall)
+
+        for note in provided_estimating_notes or []:
+            add_estimator_note(note)
 
         # Project snapshot section
         overview_bullets = []
@@ -2289,13 +2312,14 @@ Return JSON with:
                 for item in scope[:3]:
                     add_estimator_note(f"Code-expected: {item}")
 
+        if code_based_expectations:
+            for advisory in code_based_expectations.get('notes', []):
+                add_estimator_note(advisory)
+
         if mech_bullets:
             add_estimator_note('Coordinate duct detectors and dampers with mechanical contractor for relay points.')
         else:
             add_pitfall('Mechanical integration devices (duct detectors/dampers) not found—confirm if required.')
-
-        # Aggregate estimating notes
-        estimating_notes.extend(pitfalls)
 
         sections_obj = {'estimating_notes': estimating_notes}
 
