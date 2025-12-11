@@ -689,6 +689,10 @@ def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
             logger.error("Failed to stream any pages from PDF: %s", pdf_path)
             return {'success': False, 'error': 'Failed to convert PDF'}
 
+        if pages_processed == 0:
+            logger.error("Failed to stream any pages from PDF: %s", pdf_path)
+            return {'success': False, 'error': 'Failed to convert PDF'}
+
         # Compile results
         results = {
             'success': True,
