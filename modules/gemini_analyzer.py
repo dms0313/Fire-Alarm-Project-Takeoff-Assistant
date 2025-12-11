@@ -2195,6 +2195,10 @@ Return JSON with:
             if not isinstance(devices, list):
                 continue
             for device in devices:
+                if isinstance(device, str):
+                    device = {'device_type': device}
+                elif not isinstance(device, dict):
+                    continue
                 label = device.get('device_type') or device.get('type') or device_type
                 location = device.get('location') or device.get('equipment_id')
                 qty = device.get('quantity')
