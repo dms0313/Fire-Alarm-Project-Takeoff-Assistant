@@ -883,11 +883,13 @@ class GeminiFireAlarmAnalyzer:
         if not page_numbers:
             return []
 
-        images = self.pdf_processor.pdf_to_images(pdf_path, selected_pages=page_numbers)
         payload: List[Dict[str, Any]] = []
         total_bytes = 0
 
-        for image, page_number in zip(images, page_numbers):
+        for page_number, image in self.pdf_processor.iter_pdf_images(
+            pdf_path, selected_pages=page_numbers
+        ):
+            buffer = None
             try:
                 # Downscale to reduce upload size and speed up transmission.
                 max_dimension = 1400
@@ -910,6 +912,14 @@ class GeminiFireAlarmAnalyzer:
                     "Skipping image for page %s due to render error: %s", page_number, exc
                 )
                 continue
+            finally:
+                try:
+                    if hasattr(image, "close"):
+                        image.close()
+                    if buffer is not None:
+                        buffer.close()
+                except Exception:
+                    pass
 
         if payload:
             logger.info(
