@@ -2236,6 +2236,7 @@ Return JSON with:
             layout_bullets: List[str] = []
 
             if not isinstance(device_layout_review, dict):
+                layout_bullets.append(str(device_layout_review))
                 device_layout_review = {}
 
             primary_page = device_layout_review.get('primary_fa_page') or {}
@@ -2247,7 +2248,11 @@ Return JSON with:
                     text += f" – {reason}"
                 layout_bullets.append(text)
 
-            for unusual in device_layout_review.get('unusual_placements', []) or []:
+            unusual_entries = device_layout_review.get('unusual_placements', [])
+            if unusual_entries and not isinstance(unusual_entries, (list, tuple)):
+                unusual_entries = [unusual_entries]
+
+            for unusual in unusual_entries or []:
                 if isinstance(unusual, dict):
                     page = unusual.get('page')
                     device_label = unusual.get('device_type') or 'Device'
