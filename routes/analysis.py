@@ -599,73 +599,95 @@ def _run_local_detection_analysis(analyzer, pdf_path, skip_blank, skip_edges,
             pages_processed += 1
             logger.info(f"Processing page {page_num} ({page_index} processed)")
 
-            # Create tiles
-            tiles, tile_stats = analyzer.pdf_processor.create_tiles(
-                image,
-                tile_size=config.TILE_SIZE,
-                overlap=config.OVERLAP_PERCENT,
-                skip_blank=skip_blank,
-                skip_edges=skip_edges,
-                prioritize_complex=True
-            )
+            tiles = []
+            try:
+                # Create tiles
+                tiles, tile_stats = analyzer.pdf_processor.create_tiles(
+                    image,
+                    tile_size=config.TILE_SIZE,
+                    overlap=config.OVERLAP_PERCENT,
+                    skip_blank=skip_blank,
+                    skip_edges=skip_edges,
+                    prioritize_complex=True
+                )
 
-            logger.info(f"Page {page_num} - Created {tile_stats['kept']} tiles")
+                logger.info(f"Page {page_num} - Created {tile_stats['kept']} tiles")
 
-            if not tiles:
-                page_analyses.append(PageAnalysis(
+                if not tiles:
+                    page_analyses.append(PageAnalysis(
+                        page_number=page_num,
+                        is_fire_alarm_page=False,
+                        page_type='other',
+                        devices=[],
+                        keyed_notes=[],
+                        specifications=[]
+                    ).to_dict())
+                    continue
+
+                # Run detection
+                if use_parallel:
+                    detections, proc_stats = analyzer.local_detector.process_all_tiles_parallel(
+                        tiles, confidence, config.MAX_WORKERS, use_cache
+                    )
+                else:
+                    detections, proc_stats = analyzer.local_detector.process_all_tiles_sequential(
+                        tiles, confidence, use_cache
+                    )
+
+                logger.info(f"Page {page_num} - Found {len(detections)} raw detections")
+
+                # Remove overlaps
+                filtered_detections = analyzer.visualizer.remove_overlapping_detections(detections)
+
+                logger.info(f"Page {page_num} - {len(filtered_detections)} unique detections after NMS")
+
+                # Convert to FireAlarmDevice objects
+                devices = []
+                for det in filtered_detections:
+                    device = FireAlarmDevice(
+                        device_type=det['class'],
+                        location=f"Page {page_num}",
+                        page_number=page_num,
+                        confidence=det['confidence'],
+                        x=int(det['x']),
+                        y=int(det['y']),
+                        width=int(det['width']),
+                        height=int(det['height'])
+                    )
+                    devices.append(device)
+                    total_devices.append(device)
+
+                # Create page analysis
+                page_analysis = PageAnalysis(
                     page_number=page_num,
-                    is_fire_alarm_page=False,
-                    page_type='other',
-                    devices=[],
+                    is_fire_alarm_page=len(devices) > 0,
+                    page_type=_classify_page_type(page_num, devices),
+                    devices=devices,
                     keyed_notes=[],
                     specifications=[]
-                ).to_dict())
-                continue
-
-            # Run detection
-            if use_parallel:
-                detections, proc_stats = analyzer.local_detector.process_all_tiles_parallel(
-                    tiles, confidence, config.MAX_WORKERS, use_cache
-                )
-            else:
-                detections, proc_stats = analyzer.local_detector.process_all_tiles_sequential(
-                    tiles, confidence, use_cache
                 )
 
-            logger.info(f"Page {page_num} - Found {len(detections)} raw detections")
+                page_analyses.append(page_analysis.to_dict())
+            finally:
+                # Release memory eagerly to avoid large page backlogs
+                for tile in tiles:
+                    tile_img = tile.get('image')
+                    if hasattr(tile_img, 'close'):
+                        try:
+                            tile_img.close()
+                        except Exception:
+                            pass
+                tiles.clear()
 
-            # Remove overlaps
-            filtered_detections = analyzer.visualizer.remove_overlapping_detections(detections)
+                if hasattr(image, 'close'):
+                    try:
+                        image.close()
+                    except Exception:
+                        pass
 
-            logger.info(f"Page {page_num} - {len(filtered_detections)} unique detections after NMS")
-
-            # Convert to FireAlarmDevice objects
-            devices = []
-            for det in filtered_detections:
-                device = FireAlarmDevice(
-                    device_type=det['class'],
-                    location=f"Page {page_num}",
-                    page_number=page_num,
-                    confidence=det['confidence'],
-                    x=int(det['x']),
-                    y=int(det['y']),
-                    width=int(det['width']),
-                    height=int(det['height'])
-                )
-                devices.append(device)
-                total_devices.append(device)
-
-            # Create page analysis
-            page_analysis = PageAnalysis(
-                page_number=page_num,
-                is_fire_alarm_page=len(devices) > 0,
-                page_type=_classify_page_type(page_num, devices),
-                devices=devices,
-                keyed_notes=[],
-                specifications=[]
-            )
-
-            page_analyses.append(page_analysis.to_dict())
+        if pages_processed == 0:
+            logger.error("Failed to stream any pages from PDF: %s", pdf_path)
+            return {'success': False, 'error': 'Failed to convert PDF'}
 
         if pages_processed == 0:
             logger.error("Failed to stream any pages from PDF: %s", pdf_path)
