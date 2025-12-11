@@ -785,7 +785,8 @@ class GeminiFireAlarmAnalyzer:
             if page.get("page_number") is not None
         ]
 
-        prioritized_candidates: List[int] = []
+        electrical_pages: List[int] = []
+        mechanical_pages: List[int] = []
 
         for page in pages_text:
             text_lower = (page.get("text") or "").lower()
@@ -794,19 +795,20 @@ class GeminiFireAlarmAnalyzer:
                 continue
 
             if self._is_electrical_power_or_special_system_page(text_lower):
-                prioritized_candidates.append(page_number)
+                electrical_pages.append(page_number)
                 continue
 
-            if self._has_unique_fire_alarm_details(text_lower):
-                prioritized_candidates.append(page_number)
+            if self._is_mechanical_page(text_lower):
+                mechanical_pages.append(page_number)
 
         ordered_unique = self._unique_page_order([
             *cover_pages,
-            *prioritized_candidates,
-        ])[: self.max_image_pages]
+            *electrical_pages,
+            *mechanical_pages,
+        ])
 
         logger.info(
-            "Attaching %s page images to Gemini (cover + electrical/FA detail pages): %s",
+            "Attaching %s page images to Gemini (first three + electrical/mechanical pages): %s",
             len(ordered_unique),
             ordered_unique,
         )
@@ -828,6 +830,22 @@ class GeminiFireAlarmAnalyzer:
         has_plan_context = "plan" in text_lower or "sheet" in text_lower
 
         return has_power_or_special and has_plan_context
+
+    @staticmethod
+    def _is_mechanical_page(text_lower: str) -> bool:
+        """Return True for mechanical or HVAC pages."""
+
+        mechanical_keywords = {
+            "mechanical",
+            "hvac",
+            "duct",
+            "damper",
+            "air handler",
+            "rtu",
+            "ahu",
+        }
+
+        return any(keyword in text_lower for keyword in mechanical_keywords)
 
     @staticmethod
     def _has_unique_fire_alarm_details(text_lower: str) -> bool:
