@@ -2,16 +2,11 @@
 PDF Processing Module - Handles PDF to image conversion and tiling
 """
 import logging
+import re
 from typing import List, Tuple, Dict
 import fitz  # PyMuPDF
 from PIL import Image
 import numpy as np
-
-from .agent_fix_text_encoding import (
-    looks_corrupted,
-    repair_binary_escapes,
-    sanitize_text_for_gemini,
-)
 
 from config import DPI, TILE_SIZE, OVERLAP_PERCENT
 
@@ -45,11 +40,7 @@ class PDFProcessor:
                 if not isinstance(raw_text, str):
                     raw_text = str(raw_text)
 
-                # Repair obviously corrupted binary escapes before further cleaning
-                if looks_corrupted(raw_text):
-                    raw_text = repair_binary_escapes(raw_text)
-
-                cleaned_text = sanitize_text_for_gemini(raw_text)
+                cleaned_text = self._sanitize_text(raw_text)
 
                 pages.append({
                     "page_number": i,
@@ -61,6 +52,17 @@ class PDFProcessor:
         except Exception as e:
             logger.error(f"Error extracting text from PDF: {e}", exc_info=True)
             return []
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """Ensure extracted PDF text is safe for downstream processing."""
+
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="replace")
+
+        # Remove control characters except whitespace/newlines
+        text = re.sub(r"[^\n\t\r\x20-\x7E]", "", text)
+        return text
         
     def pdf_to_images(self, pdf_path: str, selected_pages: List[int] = None) -> List[Image.Image]:
         """
