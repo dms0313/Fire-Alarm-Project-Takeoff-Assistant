@@ -152,6 +152,8 @@ class PDFProcessor:
                     logger.info("Streaming all %s pages", total_pages)
 
                 for page_num in pages_to_process:
+                    pix = None
+                    page = None
                     try:
                         page = doc[page_num]
                         page_size = page.rect.width * page.rect.height
@@ -177,6 +179,12 @@ class PDFProcessor:
                     except Exception as page_err:  # pragma: no cover - defensive logging
                         logger.error("Error streaming page %s: %s", page_num + 1, page_err)
                         continue
+                    finally:
+                        try:
+                            pix = None
+                            page = None
+                        except Exception:
+                            pass
         except Exception as exc:
             logger.error("Error streaming PDF pages from %s: %s", pdf_path, exc, exc_info=True)
             return
