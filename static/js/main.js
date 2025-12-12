@@ -53,7 +53,10 @@ const followUpResponse = document.getElementById('followUpResponse');
 const historyList = document.getElementById('historyList');
 const historyListWrapper = document.getElementById('historyListWrapper');
 const historyStatus = document.getElementById('historyStatus');
-const historyToggle = document.getElementById('historyToggle');
+const historyPopup = document.getElementById('historyPopup');
+const historyPopupToggle = document.getElementById('historyPopupToggle');
+const historyPopupClose = document.getElementById('historyPopupClose');
+const geminiActions = document.getElementById('geminiActions');
 const notionTransferSection = document.getElementById('notionTransferSection');
 const sendToNotionBtn = document.getElementById('sendToNotionBtn');
 const notionTransferStatus = document.getElementById('notionTransferStatus');
@@ -108,7 +111,6 @@ let availableGeminiModels = [];
 let latestGeminiResults = null;
 let pageSelectionCollapsed = true;
 let geminiCardIdCounts = {};
-let historyCollapsed = true;
 let notionConfigured = false;
 const pagePreviewCache = new Map();
 
@@ -130,9 +132,9 @@ DocumentReady(() => {
     setupControls();
     setupModelSelector();
     setupFollowUp();
+    setupHistoryPopup();
     setupNotionTransfer();
     setPageSelectionCollapsed(true);
-    setHistoryCollapsed(true);
     resetGeminiUI();
     checkStatus();
     setInterval(checkStatus, 30000);
@@ -255,9 +257,6 @@ function setupUploadInteractions() {
         pageSelectionToggle.addEventListener('click', () => setPageSelectionCollapsed(!pageSelectionCollapsed));
     }
 
-    if (historyToggle) {
-        historyToggle.addEventListener('click', () => setHistoryCollapsed(!historyCollapsed));
-    }
 }
 
 function setupControls() {
@@ -275,6 +274,24 @@ function setupModelSelector() {
     }
 
     geminiModelSelect.addEventListener('change', handleGeminiModelChange);
+}
+
+function setupHistoryPopup() {
+    if (historyPopupToggle) {
+        historyPopupToggle.addEventListener('click', toggleHistoryPopup);
+    }
+
+    if (historyPopupClose) {
+        historyPopupClose.addEventListener('click', closeHistoryPopup);
+    }
+
+    if (historyPopup) {
+        historyPopup.addEventListener('click', (event) => {
+            if (event.target === historyPopup) {
+                closeHistoryPopup();
+            }
+        });
+    }
 }
 
 function hidePageHoverPreview() {
@@ -299,6 +316,10 @@ function hidePageHoverPreview() {
 function setPageSelectionCollapsed(collapsed) {
     pageSelectionCollapsed = collapsed;
 
+    if (pageSelection) {
+        pageSelection.classList.toggle('collapsed', collapsed);
+    }
+
     if (pageGridWrapper) {
         pageGridWrapper.classList.toggle('collapsed', collapsed);
     }
@@ -306,29 +327,6 @@ function setPageSelectionCollapsed(collapsed) {
     if (pageSelectionToggle) {
         pageSelectionToggle.textContent = collapsed ? 'Expand Page Selection' : 'Collapse Page Selection';
         pageSelectionToggle.setAttribute('aria-expanded', (!collapsed).toString());
-    }
-}
-
-function setHistoryCollapsed(collapsed) {
-    historyCollapsed = collapsed;
-
-    if (historyToggle) {
-        const label = historyToggle.querySelector('.toggle-label');
-        if (label) {
-            label.textContent = collapsed ? 'Show History' : 'Hide History';
-        }
-        historyToggle.setAttribute('aria-expanded', (!collapsed).toString());
-    }
-
-    if (historyListWrapper) {
-        const targetHeight = collapsed ? 0 : historyListWrapper.scrollHeight;
-        historyListWrapper.style.maxHeight = `${targetHeight}px`;
-        historyListWrapper.classList.toggle('expanded', !collapsed);
-        historyListWrapper.classList.toggle('collapsed', collapsed);
-    }
-
-    if (historyList) {
-        historyList.setAttribute('aria-hidden', collapsed.toString());
     }
 }
 
@@ -640,6 +638,7 @@ function resetGeminiUI() {
     clearFollowUpUI();
     setFollowUpEnabled(false);
     resetNotionTransfer();
+    setGeminiActionsVisible(false);
 }
 
 function setupFollowUp() {
@@ -794,6 +793,14 @@ function updateGeminiReportButtonState() {
         downloadGeminiReportBtn.disabled = true;
         downloadGeminiReportBtn.title = 'Run Gemini analysis to generate the detailed report';
     }
+}
+
+function setGeminiActionsVisible(visible) {
+    if (!geminiActions) {
+        return;
+    }
+
+    geminiActions.classList.toggle('hidden', !visible);
 }
 
 function setCopyStatus(message, tone = 'info') {
@@ -1366,6 +1373,7 @@ function startAnalysis(type) {
         }
         currentGeminiJobId = null;
         updateGeminiReportButtonState();
+        setGeminiActionsVisible(false);
         endpoint = '/api/analyze_gemini';
         const sendGeminiImages = sendGeminiImagesCheckbox ? sendGeminiImagesCheckbox.checked : false;
         formData.append('send_images', sendGeminiImages);
@@ -1734,6 +1742,7 @@ function displayGeminiResults(data, options = {}) {
         copyGeminiBtn.disabled = false;
         copyGeminiBtn.title = 'Copy the AI sections to your clipboard';
     }
+    setGeminiActionsVisible(true);
     setCopyStatus(fromHistory ? 'Loaded from history.' : 'Ready to copy the Gemini summary and sections.');
     updateNotionTransferState();
 
@@ -1907,6 +1916,7 @@ function displayGeminiError(message) {
     if (copyGeminiBtn) {
         copyGeminiBtn.disabled = true;
     }
+    setGeminiActionsVisible(false);
     setCopyStatus('');
 
     const { card, content } = createGeminiCard('Gemini Analysis Error', 'full-width');
@@ -3332,8 +3342,51 @@ async function refreshHistoryList() {
         renderHistoryEntries(payload.entries || []);
     } catch (error) {
         setHistoryStatus(error.message || 'Unable to load history', true);
-    } finally {
-        setTimeout(() => setHistoryCollapsed(historyCollapsed), 50);
+    }
+}
+
+function toggleHistoryPopup() {
+    if (!historyPopup) {
+        return;
+    }
+
+    const willOpen = historyPopup.classList.contains('hidden');
+    if (willOpen) {
+        openHistoryPopup();
+    } else {
+        closeHistoryPopup();
+    }
+}
+
+function openHistoryPopup() {
+    if (!historyPopup) {
+        return;
+    }
+
+    historyPopup.classList.remove('hidden');
+    requestAnimationFrame(() => historyPopup.classList.add('visible'));
+    historyPopup.setAttribute('aria-hidden', 'false');
+    if (historyList) {
+        historyList.setAttribute('aria-hidden', 'false');
+    }
+    if (historyPopupToggle) {
+        historyPopupToggle.setAttribute('aria-expanded', 'true');
+    }
+}
+
+function closeHistoryPopup() {
+    if (!historyPopup) {
+        return;
+    }
+
+    historyPopup.classList.remove('visible');
+    historyPopup.setAttribute('aria-hidden', 'true');
+    setTimeout(() => historyPopup.classList.add('hidden'), 200);
+    if (historyList) {
+        historyList.setAttribute('aria-hidden', 'true');
+    }
+    if (historyPopupToggle) {
+        historyPopupToggle.setAttribute('aria-expanded', 'false');
     }
 }
 
