@@ -4,32 +4,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚨 Fire Alarm PDF Analyzer - v6</title>
+    <title>FA Takeoff Assistant</title>
     <link rel="stylesheet" href="../static/css/style.css">
     <script defer src="/static/js/main.js"></script>
 </head>
 
 <body>
     <div class="container">
-        <h1>🚨 Fire Alarm PDF Analyzer</h1>
-        <p class="subtitle">Version 6 - Unified Detection &amp; Gemini AI Review</p>
+        <h1 class="app-title">FA Takeoff Assistant</h1>
 
-        <div class="status-bar" role="status">
-            <div class="status-item">
-                <div class="status-dot" id="local-model-status" aria-hidden="true"></div>
-                <span>Local Model: <span id="local-model-text">Checking...</span></span>
-            </div>
-            <div class="status-item">
-                <div class="status-dot" id="gemini-status" aria-hidden="true"></div>
-                <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
-            </div>
-            <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite">
-            </div>
-            <div class="status-item model-selector">
-                <label for="geminiModelSelect">Gemini Model:</label>
-                <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
-                <span class="status-helper" id="model-info">-</span>
-            </div>
+        <div class="top-actions">
+            <div class="tagline">Unified symbol detection with modern Gemini insights.</div>
+            <button class="settings-btn" id="openSettingsBtn" aria-haspopup="dialog" aria-controls="settingsModal">
+                <span class="settings-icon" aria-hidden="true">⚙️</span>
+                Settings
+            </button>
         </div>
 
         <div class="app-layout">
@@ -145,43 +134,6 @@
                             </div>
                         </div>
 
-                        <div class="options-grid">
-                            <div class="option-group">
-                                <h3>Processing Options</h3>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="skipBlank" checked>
-                                    <label for="skipBlank">Skip blank/white tiles</label>
-                                </div>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="skipEdges" checked>
-                                    <label for="skipEdges">Skip document edge tiles</label>
-                                </div>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="useParallel" checked>
-                                    <label for="useParallel">Enable parallel processing</label>
-                                </div>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="useCache" checked>
-                                    <label for="useCache">Use result caching</label>
-                                </div>
-                            </div>
-                            <div class="option-group">
-                                <h3>Detection Threshold</h3>
-                                <div class="slider-group">
-                                    <label for="confidence">Confidence Threshold: <span class="slider-value"
-                                            id="confidenceValue">0.50</span></label>
-                                    <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
-                                </div>
-                            </div>
-                            <div class="option-group">
-                                <h3>Gemini Options</h3>
-                                <div class="checkbox-group">
-                                    <input type="checkbox" id="sendGeminiImages" checked>
-                                    <label for="sendGeminiImages">Send key pages to Gemini as images (cover, electrical/fire alarm, mechanical)</label>
-                                </div>
-                            </div>
-                        </div>
-
                         <div class="action-row">
                             <button class="btn" id="analyzeBtn" disabled>🔍 Analyze for Symbols (Selected Pages)</button>
                             <button class="btn btn-gemini" id="startGeminiBtn" disabled>🤖 Run Gemini AI Summary (All
@@ -278,6 +230,76 @@
                         </div>
                     </div>
                 </section>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-footer" role="status">
+        <div class="status-item">
+            <div class="status-dot" id="local-model-status" aria-hidden="true"></div>
+            <span>Local Model: <span id="local-model-text">Checking...</span></span>
+        </div>
+        <div class="status-item">
+            <div class="status-dot" id="gemini-status" aria-hidden="true"></div>
+            <span>Gemini AI: <span id="gemini-text">Checking...</span></span>
+        </div>
+        <div class="status-item status-message hidden" id="gemini-status-message" role="alert" aria-live="polite">
+        </div>
+    </div>
+
+    <div class="settings-overlay hidden" id="settingsModal" role="dialog" aria-modal="true" aria-hidden="true">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <div>
+                    <p class="eyebrow">Configuration</p>
+                    <h2>Processing &amp; Gemini Settings</h2>
+                    <p class="settings-helper">Tune YOLO detection, Gemini preferences, and models in one place.</p>
+                </div>
+                <button class="settings-close" id="closeSettingsBtn" aria-label="Close settings">×</button>
+            </div>
+
+            <div class="settings-grid">
+                <div class="option-group">
+                    <h3>Processing Options</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipBlank" checked>
+                        <label for="skipBlank">Skip blank/white tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="skipEdges" checked>
+                        <label for="skipEdges">Skip document edge tiles</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useParallel" checked>
+                        <label for="useParallel">Enable parallel processing</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="useCache" checked>
+                        <label for="useCache">Use result caching</label>
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <h3>Detection Threshold</h3>
+                    <div class="slider-group">
+                        <label for="confidence">Confidence Threshold: <span class="slider-value"
+                                id="confidenceValue">0.50</span></label>
+                        <input type="range" id="confidence" min="0" max="1" step="0.05" value="0.5">
+                    </div>
+                </div>
+
+                <div class="option-group">
+                    <h3>Gemini Options</h3>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="sendGeminiImages" checked>
+                        <label for="sendGeminiImages">Send key pages to Gemini as images (cover, electrical/fire alarm, mechanical)</label>
+                    </div>
+                    <div class="model-selector">
+                        <label for="geminiModelSelect">Gemini Model</label>
+                        <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
+                        <span class="status-helper" id="model-info">-</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

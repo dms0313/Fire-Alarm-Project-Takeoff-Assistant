@@ -50,6 +50,9 @@ const followUpQuestion = document.getElementById('followUpQuestion');
 const askFollowUpBtn = document.getElementById('askFollowUpBtn');
 const followUpStatus = document.getElementById('followUpStatus');
 const followUpResponse = document.getElementById('followUpResponse');
+const openSettingsBtn = document.getElementById('openSettingsBtn');
+const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+const settingsModal = document.getElementById('settingsModal');
 const historyList = document.getElementById('historyList');
 const historyListWrapper = document.getElementById('historyListWrapper');
 const historyStatus = document.getElementById('historyStatus');
@@ -134,6 +137,7 @@ DocumentReady(() => {
     setupFollowUp();
     setupHistoryPopup();
     setupNotionTransfer();
+    setupSettingsModal();
     setPageSelectionCollapsed(true);
     resetGeminiUI();
     checkStatus();
@@ -266,6 +270,39 @@ function setupControls() {
             confidenceValue.textContent = parseFloat(e.target.value).toFixed(2);
         });
     }
+}
+
+function setupSettingsModal() {
+    if (!settingsModal || !openSettingsBtn || !closeSettingsBtn) {
+        return;
+    }
+
+    const openModal = () => {
+        settingsModal.classList.remove('hidden');
+        requestAnimationFrame(() => settingsModal.classList.add('active'));
+        settingsModal.setAttribute('aria-hidden', 'false');
+    };
+
+    const closeModal = () => {
+        settingsModal.classList.remove('active');
+        settingsModal.setAttribute('aria-hidden', 'true');
+        setTimeout(() => settingsModal.classList.add('hidden'), 200);
+    };
+
+    openSettingsBtn.addEventListener('click', openModal);
+    closeSettingsBtn.addEventListener('click', closeModal);
+
+    settingsModal.addEventListener('click', (e) => {
+        if (e.target === settingsModal) {
+            closeModal();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
+            closeModal();
+        }
+    });
 }
 
 function setupModelSelector() {
