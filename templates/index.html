@@ -34,26 +34,36 @@
 
         <div class="app-layout">
             <aside class="sidebar" aria-label="Previous analyses and saved projects">
-                <section class="history-panel" aria-label="Previous analyses">
-                    <div class="history-header">
+                <div class="history-launcher">
+                    <button type="button" class="history-fab" id="historyPopupToggle" aria-expanded="false"
+                        aria-controls="historyPopup" aria-label="Open project history">
+                        <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                            <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h4.086a2.5 2.5 0 0 1 1.768.732l1.914 1.914A2.5 2.5 0 0 0 16.036 8h1.464A2.5 2.5 0 0 1 20 10.5V17A3 3 0 0 1 17 20H7a3 3 0 0 1-3-3Z"
+                                fill="currentColor" />
+                            <path d="M8 12.5a1 1 0 0 1 1-1h6.5a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Zm1 3.5a1 1 0 0 0 0 2h4.5a1 1 0 1 0 0-2Z"
+                                fill="currentColor" />
+                        </svg>
+                        <span>Project History</span>
+                    </button>
+                    <div class="history-status" id="historyStatus"></div>
+                </div>
+            </aside>
+
+            <div class="history-popup hidden" id="historyPopup" role="dialog" aria-modal="true" aria-hidden="true">
+                <div class="history-popup-content">
+                    <div class="history-popup-header">
                         <div>
                             <h2 class="section-title">📁 Project History</h2>
                             <p class="section-subtitle">Quickly reopen recent documents and Gemini takeoffs.</p>
                         </div>
-                        <div class="history-actions-inline">
-                            <button type="button" class="collapse-toggle" id="historyToggle" aria-expanded="false">
-                                <span class="toggle-label">Show History</span>
-                                <span class="toggle-chevron" aria-hidden="true">▸</span>
-                            </button>
-                            <div class="history-status" id="historyStatus"></div>
-                        </div>
+                        <button type="button" class="popup-close" id="historyPopupClose" aria-label="Close project history">×</button>
                     </div>
-                    <div class="history-list-wrapper collapsed" id="historyListWrapper">
+                    <div class="history-list-wrapper" id="historyListWrapper">
                         <div class="history-list" id="historyList" role="list" aria-hidden="true">
                         </div>
                     </div>
-                </section>
-            </aside>
+                </div>
+            </div>
 
             <div class="main-content">
                 <section class="analysis-panel" id="analysisPanel">
@@ -214,7 +224,7 @@
                         </p>
                         <p class="gemini-helper">Gemini is always executed across all pages of your PDF — use the button above
                             whenever you need a fresh summary.</p>
-                        <div class="gemini-actions">
+                        <div class="gemini-actions hidden" id="geminiActions">
                             <div class="gemini-action-buttons">
                                 <button class="btn btn-gemini" id="downloadGeminiReportBtn" disabled>
                                     📄 Download Report
