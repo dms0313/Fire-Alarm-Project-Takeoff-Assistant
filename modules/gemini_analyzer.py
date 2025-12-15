@@ -91,6 +91,9 @@ class GeminiFireAlarmAnalyzer:
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
         self.request_timeout = int(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
         self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "8"))
+        self.image_render_dpi = int(os.environ.get("GEMINI_IMAGE_DPI", "200"))
+        self.image_max_dimension = int(os.environ.get("GEMINI_IMAGE_MAX_DIMENSION", "1400"))
+        self.image_jpeg_quality = int(os.environ.get("GEMINI_IMAGE_JPEG_QUALITY", "80"))
         self.tried_models: List[str] = []
 
         if self.api_key:
@@ -593,6 +596,41 @@ class GeminiFireAlarmAnalyzer:
 
         return any(keyword in text_lower for keyword in plumbing_keywords)
 
+    @staticmethod
+    def _is_electrical_overview_page(text_lower: str) -> bool:
+        """Return True for electrical overview/power/special systems sheets."""
+
+        electrical_keywords = [
+            "electrical",
+            "e-",
+            "one line",
+            "single line",
+            "power plan",
+            "special systems",
+            "electrical overview",
+            "panel schedule",
+        ]
+
+        return any(keyword in text_lower for keyword in electrical_keywords)
+
+    @staticmethod
+    def _is_mechanical_fire_related_page(text_lower: str) -> bool:
+        """Return True for mechanical sheets mentioning fire alarm devices."""
+
+        mechanical_fire_keywords = [
+            "duct detector",
+            "smoke detector",
+            "smoke damper",
+            "fire smoke damper",
+            "fsd",
+            "fire alarm control panel",
+            "f.a.c.p",
+            "fan shutdown",
+            "fire alarm control",
+        ]
+
+        return any(keyword in text_lower for keyword in mechanical_fire_keywords)
+
     def _filter_pages_for_gemini(
         self, pages_text: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -603,11 +641,22 @@ class GeminiFireAlarmAnalyzer:
 
         filtered_pages: List[Dict[str, Any]] = []
         dropped_reasons: List[str] = []
+        priority_kept: List[str] = []
 
         for page in pages_text:
             text = page.get("text", "") or ""
             text_lower = text.lower()
             page_number = page.get("page_number")
+
+            if self._is_electrical_overview_page(text_lower):
+                filtered_pages.append(page)
+                priority_kept.append(f"Page {page_number}: electrical/special systems context")
+                continue
+
+            if self._is_mechanical_fire_related_page(text_lower):
+                filtered_pages.append(page)
+                priority_kept.append(f"Page {page_number}: mechanical fire devices")
+                continue
 
             if self._is_landscaping_page(text_lower):
                 dropped_reasons.append(f"Page {page_number}: landscaping")
@@ -641,6 +690,28 @@ class GeminiFireAlarmAnalyzer:
                 logger.info("Additional pages filtered (not listed): %s", len(dropped_reasons) - 20)
         else:
             logger.info("No pages filtered before Gemini transmission.")
+
+        if priority_kept:
+            logger.info("Kept %s priority context pages: %s", len(priority_kept), "; ".join(priority_kept))
+
+        # Ensure at least the first couple of pages are retained for cover/context details.
+        if pages_text:
+            minimum_context = 2
+            existing_numbers = {page.get("page_number") for page in filtered_pages}
+            ordered_pages = sorted(
+                pages_text,
+                key=lambda p: (p.get("page_number") is None, p.get("page_number") or 0),
+            )
+
+            for page in ordered_pages[:minimum_context]:
+                number = page.get("page_number")
+                if number not in existing_numbers:
+                    filtered_pages.append(page)
+                    existing_numbers.add(number)
+                    priority_kept.append(f"Page {number}: forced context include")
+
+        if priority_kept:
+            logger.info("Final priority pages included: %s", "; ".join(priority_kept))
 
         return filtered_pages
 
@@ -886,13 +957,21 @@ class GeminiFireAlarmAnalyzer:
         payload: List[Dict[str, Any]] = []
         total_bytes = 0
 
+        logger.info(
+            "Rendering %s pages for Gemini at %sdpi (max %spx, JPEG q%s)",
+            len(page_numbers),
+            self.image_render_dpi,
+            self.image_max_dimension,
+            self.image_jpeg_quality,
+        )
+
         for page_number, image in self.pdf_processor.iter_pdf_images(
-            pdf_path, selected_pages=page_numbers
+            pdf_path, selected_pages=page_numbers, render_dpi=self.image_render_dpi
         ):
             buffer = None
             try:
                 # Downscale to reduce upload size and speed up transmission.
-                max_dimension = 1400
+                max_dimension = self.image_max_dimension
                 image = image.convert("RGB")
                 image.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
 
@@ -900,7 +979,7 @@ class GeminiFireAlarmAnalyzer:
                 image.save(
                     buffer,
                     format="JPEG",
-                    quality=80,
+                    quality=self.image_jpeg_quality,
                     optimize=True,
                     progressive=True,
                 )

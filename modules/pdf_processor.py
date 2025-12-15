@@ -128,13 +128,17 @@ class PDFProcessor:
             return []
 
     def iter_pdf_images(
-        self, pdf_path: str, selected_pages: List[int] | None = None
+        self,
+        pdf_path: str,
+        selected_pages: List[int] | None = None,
+        render_dpi: int | None = None,
     ) -> Iterator[tuple[int, Image.Image]]:
         """Yield pages as PIL images one-at-a-time to keep memory usage low.
 
         Args:
             pdf_path: Path to the PDF file
             selected_pages: Optional list of 1-based page numbers to process
+            render_dpi: Optional DPI override; defaults to the processor's DPI
 
         Yields:
             Tuples of (page_number, PIL Image)
@@ -151,6 +155,7 @@ class PDFProcessor:
                     pages_to_process = range(total_pages)
                     logger.info("Streaming all %s pages", total_pages)
 
+                render_dpi = render_dpi or self.dpi
                 for page_num in pages_to_process:
                     pix = None
                     page = None
@@ -161,7 +166,7 @@ class PDFProcessor:
                             logger.warning("Page %s has zero size, skipping", page_num + 1)
                             continue
 
-                        mat = fitz.Matrix(self.dpi / 72, self.dpi / 72)
+                        mat = fitz.Matrix(render_dpi / 72, render_dpi / 72)
                         pix = page.get_pixmap(matrix=mat, alpha=False)
                         if not pix or pix.width == 0 or pix.height == 0:
                             logger.warning("Invalid pixmap on page %s, skipping", page_num + 1)
