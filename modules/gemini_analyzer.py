@@ -91,6 +91,9 @@ class GeminiFireAlarmAnalyzer:
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
         self.request_timeout = int(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
         self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "8"))
+        self.image_render_dpi = int(os.environ.get("GEMINI_IMAGE_DPI", "200"))
+        self.image_max_dimension = int(os.environ.get("GEMINI_IMAGE_MAX_DIMENSION", "1400"))
+        self.image_jpeg_quality = int(os.environ.get("GEMINI_IMAGE_JPEG_QUALITY", "80"))
         self.tried_models: List[str] = []
 
         if self.api_key:
@@ -954,13 +957,21 @@ class GeminiFireAlarmAnalyzer:
         payload: List[Dict[str, Any]] = []
         total_bytes = 0
 
+        logger.info(
+            "Rendering %s pages for Gemini at %sdpi (max %spx, JPEG q%s)",
+            len(page_numbers),
+            self.image_render_dpi,
+            self.image_max_dimension,
+            self.image_jpeg_quality,
+        )
+
         for page_number, image in self.pdf_processor.iter_pdf_images(
-            pdf_path, selected_pages=page_numbers
+            pdf_path, selected_pages=page_numbers, render_dpi=self.image_render_dpi
         ):
             buffer = None
             try:
                 # Downscale to reduce upload size and speed up transmission.
-                max_dimension = 1400
+                max_dimension = self.image_max_dimension
                 image = image.convert("RGB")
                 image.thumbnail((max_dimension, max_dimension), Image.LANCZOS)
 
@@ -968,7 +979,7 @@ class GeminiFireAlarmAnalyzer:
                 image.save(
                     buffer,
                     format="JPEG",
-                    quality=80,
+                    quality=self.image_jpeg_quality,
                     optimize=True,
                     progressive=True,
                 )
