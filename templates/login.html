@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FA Takeoff Assistant - Login</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body {
+            background: #0f172a;
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .login-card {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45);
+            padding: 32px;
+            width: min(420px, 90vw);
+        }
+
+        .login-card h1 {
+            margin: 0 0 8px;
+            font-size: 24px;
+        }
+
+        .login-card p {
+            margin: 0 0 24px;
+            color: #94a3b8;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 8px;
+            border: 1px solid #1f2937;
+            background: #0b1324;
+            color: #e2e8f0;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        .btn-login {
+            width: 100%;
+            margin-top: 18px;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6);
+            color: white;
+            font-weight: 700;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 120ms ease, box-shadow 120ms ease;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.35);
+        }
+
+        .error-message {
+            display: none;
+            margin-top: 12px;
+            color: #f87171;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <h1>Secure Access</h1>
+        <p>Please enter the administrator password to continue.</p>
+        <form id="loginForm">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required
+                minlength="8" aria-label="Administrator password">
+            <button type="submit" class="btn-login">Sign in</button>
+            <div class="error-message" id="errorMessage" role="alert"></div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorMessage = document.getElementById('errorMessage');
+        const nextUrl = new URLSearchParams(window.location.search).get('next') || '/';
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            errorMessage.style.display = 'none';
+
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Login failed');
+                }
+
+                window.location.href = nextUrl;
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+
+</html>

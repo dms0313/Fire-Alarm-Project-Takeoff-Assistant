@@ -82,6 +82,10 @@ if torch is not None:
 # =============================================================================
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = config.MAX_CONTENT_LENGTH
+app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = config.SESSION_COOKIE_SAMESITE
+app.config['SESSION_COOKIE_SECURE'] = config.SESSION_COOKIE_SECURE
 
 
 class FireAlarmAnalyzer:
@@ -151,6 +155,16 @@ analyzer = FireAlarmAnalyzer()
 from routes import register_routes  # noqa: E402
 
 register_routes(app, analyzer)
+
+
+@app.after_request
+def add_security_headers(response):
+    """Apply basic security headers to every response."""
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 
 # =============================================================================
