@@ -11,3 +11,19 @@ When hosting the app on the internet, set the following environment variables to
 - `SESSION_COOKIE_SECURE`: Defaults to `true` to require HTTPS for session cookies; disable only for local HTTP testing.
 
 You can also set `SESSION_LIFETIME_MINUTES` to control how long sessions stay active (default: 240 minutes).
+
+## Deploying on Vercel
+
+The repository includes a Vercel entrypoint (`api/index.py`) and configuration (`vercel.json`) so you can deploy the Flask app as a serverless function.
+
+1. Install the Vercel CLI and log in: `npm i -g vercel && vercel login`.
+2. Set the required environment variables in the Vercel dashboard or via CLI:
+   - `ADMIN_PASSWORD_HASH` (required when `REQUIRE_LOGIN=true`)
+   - `SECRET_KEY`
+   - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (for Gemini features)
+   - Optional: `SESSION_LIFETIME_MINUTES`, `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_SAMESITE`
+3. Deploy from the project root: `vercel --prod`.
+
+Notes:
+- The `vercel.json` routes all traffic to the Flask WSGI app exposed in `api/index.py` using Python 3.11.
+- Local YOLO model inference is typically unavailable in serverless environments; the app will run with Gemini-only analysis unless you provide a lightweight model file via storage and point `LOCAL_MODEL_PATH` to it.
