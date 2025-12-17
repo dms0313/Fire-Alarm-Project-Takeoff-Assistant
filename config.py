@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+import logging
 import os
 from pathlib import Path
 from typing import Iterable, List, Tuple
+
+from werkzeug.security import generate_password_hash
 
 # Load environment variables
 try:
@@ -184,6 +187,33 @@ GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 10000)
 # =============================================================================
 MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max file size
 PORT = int(os.environ.get('PORT', 5003))
+REQUIRE_LOGIN = os.environ.get("REQUIRE_LOGIN", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+SESSION_LIFETIME_MINUTES = _int_from_env("SESSION_LIFETIME_MINUTES", 240)
+SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+
+# Authentication
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+_ADMIN_HASH_DERIVED = False
+if not ADMIN_PASSWORD_HASH and ADMIN_PASSWORD:
+    ADMIN_PASSWORD_HASH = generate_password_hash(ADMIN_PASSWORD)
+    _ADMIN_HASH_DERIVED = True
+
+SECRET_KEY = os.environ.get("SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY")
+if not SECRET_KEY:
+    SECRET_KEY = os.urandom(32).hex()
+    _EPHEMERAL_SECRET = True
+else:
+    _EPHEMERAL_SECRET = False
 
 # =============================================================================
 # LOGGING
@@ -197,6 +227,22 @@ LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 def validate_config():
     """Validate configuration and log status"""
     logger = logging.getLogger(__name__)
+
+    if REQUIRE_LOGIN:
+        if not ADMIN_PASSWORD_HASH:
+            logger.error(
+                "ADMIN_PASSWORD_HASH is required when REQUIRE_LOGIN is enabled."
+            )
+        elif _ADMIN_HASH_DERIVED:
+            logger.warning(
+                "ADMIN_PASSWORD provided; derive ADMIN_PASSWORD_HASH and remove the plain password env."
+            )
+
+        if _EPHEMERAL_SECRET:
+            logger.warning(
+                "SECRET_KEY not set; generated ephemeral key. Sessions will reset on restart."
+            )
+
 
     logger.info("=" * 70)
     logger.info("CONFIGURATION CHECK:")
