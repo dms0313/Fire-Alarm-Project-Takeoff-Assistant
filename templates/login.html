@@ -116,15 +116,18 @@
                     body: JSON.stringify({ password })
                 });
 
-                const data = await response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const isJson = contentType.includes('application/json');
+                const data = isJson ? await response.json() : null;
 
-                if (!response.ok || !data.success) {
-                    throw new Error(data.error || 'Login failed');
+                if (!response.ok || !data?.success) {
+                    const errorText = data?.error || (isJson ? 'Login failed' : 'Unexpected response from server');
+                    throw new Error(errorText);
                 }
 
                 window.location.href = nextUrl;
             } catch (error) {
-                errorMessage.textContent = error.message;
+                errorMessage.textContent = error.message || 'Login failed';
                 errorMessage.style.display = 'block';
             }
         });
