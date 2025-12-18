@@ -1,7 +1,8 @@
 {
   "functions": {
     "api/index.py": {
-      "runtime": "vercel-python@3.11.0",
+      "runtime": "@vercel/python@6.1.4",
+      "installCommand": "pip install -r requirements-vercel.txt",
       "maxDuration": 60,
       "memory": 1024
     }
