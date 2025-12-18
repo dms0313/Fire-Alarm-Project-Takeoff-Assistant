@@ -5,8 +5,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryStore:
@@ -15,8 +20,18 @@ class HistoryStore:
     def __init__(self, base_dir: Optional[str] = None):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
         default_dir = os.path.join(project_root, "data", "history")
-        self.base_dir = os.path.abspath(base_dir or default_dir)
-        os.makedirs(self.base_dir, exist_ok=True)
+
+        # Allow overrides for read-only environments such as Vercel.
+        env_dir = os.environ.get("HISTORY_BASE_DIR") or os.environ.get("APP_DATA_DIR")
+        preferred_dir = os.path.abspath(base_dir or env_dir or default_dir)
+
+        self.base_dir = self._ensure_directory(preferred_dir)
+        if not self.base_dir:
+            tmp_fallback = os.path.join(tempfile.gettempdir(), "fire-alarm-history")
+            self.base_dir = self._ensure_directory(tmp_fallback)
+
+        if not self.base_dir:
+            raise OSError("Unable to initialize HistoryStore: no writable directory available")
 
     def _job_dir(self, job_id: str) -> str:
         return os.path.join(self.base_dir, job_id)
@@ -143,3 +158,17 @@ class HistoryStore:
 
         shutil.rmtree(job_dir, ignore_errors=True)
         return True
+
+    def _ensure_directory(self, path: str) -> Optional[str]:
+        """Return a writable directory path, or None if unavailable."""
+
+        try:
+            os.makedirs(path, exist_ok=True)
+            test_path = os.path.join(path, ".write_test")
+            with open(test_path, "w", encoding="utf-8") as handle:
+                handle.write("ok")
+            os.remove(test_path)
+            return path
+        except OSError as exc:
+            logger.warning("HistoryStore directory not writable (%s): %s", path, exc)
+            return None
