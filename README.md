@@ -9,7 +9,7 @@ When hosting the app on the internet, set the following environment variables to
 - `ADMIN_PASSWORD`: Convenience option for local testing—set this to a strong password and the app will derive `ADMIN_PASSWORD_HASH` at startup. Do **not** store this in production; only keep the hash.
 - `SECRET_KEY`: A strong, random secret used for Flask sessions.
 - `REQUIRE_LOGIN`: Defaults to `true`; keep enabled to protect every page and API endpoint.
-- `SESSION_COOKIE_SECURE`: Defaults to `true` to require HTTPS for session cookies; disable only for local HTTP testing.
+- `SESSION_COOKIE_SECURE`: Defaults to `true` on Vercel (via the `VERCEL` env flag) but `false` for local HTTP testing. Enable it anywhere you serve the app over HTTPS.
 
 You can also set `SESSION_LIFETIME_MINUTES` to control how long sessions stay active (default: 240 minutes).
 
@@ -32,5 +32,5 @@ The repository includes a Vercel entrypoint (`api/index.py`) and configuration (
 3. Deploy from the project root: `vercel --prod`.
 
 Notes:
-- The `vercel.json` routes all traffic to the Flask WSGI app exposed in `api/index.py` using the `vercel-python@3.11.0` runtime.
+- The `vercel.json` routes all traffic to the Flask WSGI app exposed in `api/index.py` using the `@vercel/python@3.11.0` runtime declaration.
 - Local YOLO model inference is typically unavailable in serverless environments; the app will run with Gemini-only analysis unless you provide a lightweight model file via storage and point `LOCAL_MODEL_PATH` to it.
