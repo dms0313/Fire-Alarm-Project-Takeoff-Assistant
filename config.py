@@ -77,6 +77,16 @@ def _float_from_env(var_name: str, default: float) -> float:
         return default
 
 
+def _bool_from_env(var_name: str, default: bool) -> bool:
+    """Return a boolean environment value or a default when missing."""
+
+    raw_value = os.environ.get(var_name)
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() in {"1", "true", "yes"}
+
+
 def _iter_env_candidates(env_path: str, cwd: Path) -> Iterable[Path]:
     """Yield candidate paths derived from the LOCAL_MODEL_PATH environment value."""
 
@@ -187,16 +197,12 @@ GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 10000)
 # =============================================================================
 MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max file size
 PORT = int(os.environ.get('PORT', 5003))
-REQUIRE_LOGIN = os.environ.get("REQUIRE_LOGIN", "true").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-}
-SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "true").strip().lower() in {
-    "1",
-    "true",
-    "yes",
-}
+REQUIRE_LOGIN = _bool_from_env("REQUIRE_LOGIN", True)
+
+# Default to non-secure cookies locally to keep logins working over HTTP, while allowing
+# deployments to opt into secure cookies via environment variable overrides.
+_DEFAULT_SESSION_COOKIE_SECURE = _bool_from_env("VERCEL", False)
+SESSION_COOKIE_SECURE = _bool_from_env("SESSION_COOKIE_SECURE", _DEFAULT_SESSION_COOKIE_SECURE)
 SESSION_LIFETIME_MINUTES = _int_from_env("SESSION_LIFETIME_MINUTES", 240)
 SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
 
