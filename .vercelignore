@@ -1,0 +1,5 @@
+# Exclude large or non-runtime assets from the serverless function bundle
+static/models/
+.git/
+guides/
+*.md

@@ -5,8 +5,7 @@ import logging
 import re
 from typing import Dict, Iterator, List, Tuple
 import fitz  # PyMuPDF
-from PIL import Image
-import numpy as np
+from PIL import Image, ImageFilter, ImageStat
 
 from config import DPI, TILE_SIZE, OVERLAP_PERCENT
 
@@ -195,7 +194,7 @@ class PDFProcessor:
             return
     
     @staticmethod
-    def is_blank_tile(tile_image: Image.Image, threshold: float = 0.95, 
+    def is_blank_tile(tile_image: Image.Image, threshold: float = 0.95,
                      variance_threshold: float = 100) -> bool:
         """
         Check if a tile is mostly blank/empty
@@ -209,16 +208,17 @@ class PDFProcessor:
             True if tile is blank
         """
         gray = tile_image.convert('L')
-        np_img = np.array(gray)
-        
-        # Check white pixel ratio
-        white_pixels = np.sum(np_img > 240)
-        total_pixels = np_img.size
-        white_ratio = white_pixels / total_pixels
-        
-        # Check variance (low variance = uniform/blank content)
-        variance = np.var(np_img)
-        
+        stats = ImageStat.Stat(gray)
+
+        # Calculate white pixel ratio using histogram to avoid numpy dependency
+        histogram = gray.histogram()
+        white_pixels = sum(histogram[241:])  # pixels with value > 240
+        total_pixels = tile_image.width * tile_image.height
+        white_ratio = white_pixels / total_pixels if total_pixels else 0
+
+        # Variance (low variance = uniform/blank content)
+        variance = stats.var[0] if stats.var else 0
+
         return white_ratio > threshold or variance < variance_threshold
     
     @staticmethod
@@ -254,14 +254,15 @@ class PDFProcessor:
             Complexity score (float)
         """
         gray = tile_image.convert('L')
-        np_img = np.array(gray)
-        
-        # Use edge detection as proxy for content complexity
-        edges_h = np.abs(np.diff(np_img, axis=0)).sum()
-        edges_v = np.abs(np.diff(np_img, axis=1)).sum()
-        edges = edges_h + edges_v
-        
-        return edges / np_img.size
+
+        # Use edge detection as proxy for content complexity without numpy
+        edges_img = gray.filter(ImageFilter.FIND_EDGES)
+        stats = ImageStat.Stat(edges_img)
+        edge_sum = stats.sum[0] if stats.sum else 0
+
+        # Normalize by total pixel intensity range to keep values comparable
+        total_possible = tile_image.width * tile_image.height * 255
+        return edge_sum / total_possible if total_possible else 0
     
     def create_tiles(self, image: Image.Image, tile_size: int = TILE_SIZE,
                      overlap: float = OVERLAP_PERCENT,
