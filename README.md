@@ -32,5 +32,6 @@ The repository includes a Vercel entrypoint (`api/index.py`) and configuration (
 3. Deploy from the project root: `vercel --prod`.
 
 Notes:
-- The `vercel.json` routes all traffic to the Flask WSGI app exposed in `api/index.py` using the `vercel-python@3.11.0` runtime.
+- The `vercel.json` routes all traffic to the Flask WSGI app exposed in `api/index.py` using the `@vercel/python@6.1.4` runtime.
+- Vercel installs from `requirements-vercel.txt` to keep the serverless bundle small; optional heavy packages (e.g., PyTorch/Ultralytics) are omitted but handled gracefully by the app.
 - Local YOLO model inference is typically unavailable in serverless environments; the app will run with Gemini-only analysis unless you provide a lightweight model file via storage and point `LOCAL_MODEL_PATH` to it.
