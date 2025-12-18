@@ -117,11 +117,26 @@
                 });
 
                 const contentType = response.headers.get('content-type') || '';
-                const isJson = contentType.includes('application/json');
-                const data = isJson ? await response.json() : null;
+                const expectsJson = contentType.includes('application/json');
+                const rawBody = await response.text();
+                let data = null;
+                let parsedJson = false;
+
+                if (rawBody) {
+                    try {
+                        data = JSON.parse(rawBody);
+                        parsedJson = true;
+                    } catch (parseError) {
+                        // Fall back to a friendly error when the body is not valid JSON
+                        console.error('Failed to parse login response as JSON', parseError);
+                    }
+                }
+
+                const isJsonResponse = expectsJson && parsedJson;
 
                 if (!response.ok || !data?.success) {
-                    const errorText = data?.error || (isJson ? 'Login failed' : 'Unexpected response from server');
+                    const errorText =
+                        data?.error || (isJsonResponse ? 'Login failed' : 'Unexpected response from server');
                     throw new Error(errorText);
                 }
 
