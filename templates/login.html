@@ -6,10 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FA Takeoff Assistant - Login</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <script>
-        window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
-    </script>
-    <script defer src="/_vercel/insights/script.js"></script>
     <style>
         body {
             background: #0f172a;
@@ -121,14 +117,36 @@
                 });
 
                 const data = await response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const expectsJson = contentType.includes('application/json');
+                const rawBody = await response.text();
+                let data = null;
+                let parsedJson = false;
+
+                if (rawBody) {
+                    try {
+                        data = JSON.parse(rawBody);
+                        parsedJson = true;
+                    } catch (parseError) {
+                        // Fall back to a friendly error when the body is not valid JSON
+                        console.error('Failed to parse login response as JSON', parseError);
+                    }
+                }
+
+                const isJsonResponse = expectsJson && parsedJson;
 
                 if (!response.ok || !data.success) {
                     throw new Error(data.error || 'Login failed');
+                if (!response.ok || !data?.success) {
+                    const errorText =
+                        data?.error || (isJsonResponse ? 'Login failed' : 'Unexpected response from server');
+                    throw new Error(errorText);
                 }
 
                 window.location.href = nextUrl;
             } catch (error) {
                 errorMessage.textContent = error.message;
+                errorMessage.textContent = error.message || 'Login failed';
                 errorMessage.style.display = 'block';
             }
         });
