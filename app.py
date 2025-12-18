@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from flask import Flask
+from flask import Flask, jsonify, request
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -155,6 +155,28 @@ analyzer = FireAlarmAnalyzer()
 from routes import register_routes  # noqa: E402
 
 register_routes(app, analyzer)
+
+
+@app.before_request
+def enforce_max_upload_size():
+    """Reject requests that exceed the configured upload limit early."""
+
+    content_length = request.content_length
+    if content_length is not None and content_length > config.MAX_CONTENT_LENGTH:
+        logger.warning(
+            "Rejecting request over max size: %s bytes (limit: %s)",
+            content_length,
+            config.MAX_CONTENT_LENGTH,
+        )
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Upload exceeds the 500MB limit. Please split the file before retrying.",
+                }
+            ),
+            413,
+        )
 
 
 @app.after_request
