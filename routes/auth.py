@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 def _public_endpoints() -> set[str]:
     return {
         "login",
+        "login_submit",
+        "auth_status",
         "static",
     }
 

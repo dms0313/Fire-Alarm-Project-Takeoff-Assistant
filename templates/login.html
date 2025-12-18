@@ -116,33 +116,15 @@
                     body: JSON.stringify({ password })
                 });
 
-                const contentType = response.headers.get('content-type') || '';
-                const expectsJson = contentType.includes('application/json');
-                const rawBody = await response.text();
-                let data = null;
-                let parsedJson = false;
+                const data = await response.json();
 
-                if (rawBody) {
-                    try {
-                        data = JSON.parse(rawBody);
-                        parsedJson = true;
-                    } catch (parseError) {
-                        // Fall back to a friendly error when the body is not valid JSON
-                        console.error('Failed to parse login response as JSON', parseError);
-                    }
-                }
-
-                const isJsonResponse = expectsJson && parsedJson;
-
-                if (!response.ok || !data?.success) {
-                    const errorText =
-                        data?.error || (isJsonResponse ? 'Login failed' : 'Unexpected response from server');
-                    throw new Error(errorText);
+                if (!response.ok || !data.success) {
+                    throw new Error(data.error || 'Login failed');
                 }
 
                 window.location.href = nextUrl;
             } catch (error) {
-                errorMessage.textContent = error.message || 'Login failed';
+                errorMessage.textContent = error.message;
                 errorMessage.style.display = 'block';
             }
         });
