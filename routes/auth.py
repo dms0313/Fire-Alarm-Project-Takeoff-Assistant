@@ -31,16 +31,8 @@ def _public_endpoints() -> set[str]:
 
 
 def _is_request_public(path: str, endpoint: str | None) -> bool:
-    if not config.REQUIRE_LOGIN:
-        return True
-
-    if endpoint in _public_endpoints():
-        return True
-
-    if path.startswith("/static/"):
-        return True
-
-    return False
+    # Force all requests to be considered public
+    return True
 
 
 def _authenticate(password: str) -> bool:
@@ -96,14 +88,7 @@ def register_auth_routes(app) -> None:
 
     @app.route("/login", methods=["GET"])
     def login():
-        if not config.REQUIRE_LOGIN:
-            return redirect(url_for("index"))
-
-        if session.get("authenticated"):
-            dest = request.args.get("next") or url_for("index")
-            return redirect(dest)
-
-        return render_template("login.html")
+        return redirect(url_for("index"))
 
     @app.route("/login", methods=["POST"])
     def login_submit():
