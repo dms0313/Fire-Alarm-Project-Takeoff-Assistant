@@ -197,8 +197,8 @@ GEMINI_PROMPT_TRIM_LIMIT = _int_from_env("GEMINI_PROMPT_TRIM_LIMIT", 10000)
 # =============================================================================
 MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max file size
 PORT = int(os.environ.get('PORT', 5003))
-# Default to allowing access without authentication unless explicitly enabled.
-REQUIRE_LOGIN = _bool_from_env("REQUIRE_LOGIN", False)
+# Password protection is disabled for now; override via environment only if re-enabled intentionally.
+REQUIRE_LOGIN = False
 
 # Default to non-secure cookies locally to keep logins working over HTTP, while allowing
 # deployments to opt into secure cookies via environment variable overrides.
