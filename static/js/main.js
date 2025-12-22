@@ -2854,6 +2854,10 @@ function normalizeStructuredText(value) {
     if (value === undefined || value === null) {
         return '';
     }
+    if (Array.isArray(value)) {
+        const flattened = flattenStructuredItems(value).filter(Boolean);
+        return flattened.join('; ');
+    }
     if (typeof value === 'string' || typeof value === 'number') {
         return String(value).trim();
     }
@@ -3191,7 +3195,7 @@ function copyGeminiSections() {
         return;
     }
 
-    const onSuccess = () => setCopyStatus('Copied all Gemini sections to your clipboard.');
+    const onSuccess = () => setCopyStatus('Copied the full Gemini summary, notes, devices, and specs to your clipboard.');
     const onError = () =>
         setCopyStatus('Unable to copy automatically. Select the text manually and use Ctrl/Cmd + C.', 'error');
 
@@ -3226,26 +3230,247 @@ function fallbackCopyToClipboard(text, onSuccess, onError) {
     }
 }
 
+function appendSection(lines, title, contentLines) {
+    if (!Array.isArray(contentLines) || contentLines.length === 0) {
+        return;
+    }
+
+    const filtered = contentLines.filter((line) => line !== undefined && line !== null);
+    if (filtered.length === 0) {
+        return;
+    }
+
+    lines.push('', `## ${title}`, ...filtered);
+}
+
+function appendDetailLine(target, label, value) {
+    if (!target || !Array.isArray(target)) {
+        return;
+    }
+    const normalized = normalizeStructuredText(value);
+    if (normalized) {
+        target.push(`- **${label}:** ${normalized}`);
+    }
+}
+
+function appendListBlock(target, label, values = []) {
+    if (!target || !Array.isArray(target)) {
+        return;
+    }
+    const items = uniqueNonEmptyList(values);
+    if (items.length === 0) {
+        return;
+    }
+    target.push(`- **${label}:**`);
+    items.forEach((item) => target.push(`  - ${item}`));
+}
+
+function uniqueNonEmptyList(items = []) {
+    const seen = new Set();
+    const results = [];
+    items.forEach((item) => {
+        const normalized = normalizeStructuredText(item);
+        if (normalized && !seen.has(normalized)) {
+            seen.add(normalized);
+            results.push(normalized);
+        }
+    });
+    return results;
+}
+
+function formatPageLabel(page) {
+    if (page === undefined || page === null || page === '') {
+        return 'Page ?';
+    }
+    return `Page ${page}`;
+}
+
+function formatFireAlarmNote(note = {}) {
+    if (!note || typeof note !== 'object') {
+        return normalizeStructuredText(note);
+    }
+    const pageLabel = formatPageLabel(note.page);
+    const noteType = note.note_type ? `[${note.note_type}] ` : '';
+    const content = note.content || note.note || note.text || 'Details not provided.';
+    return `${pageLabel} — ${noteType}${content}`;
+}
+
+function formatMechanicalDevice(device) {
+    if (!device || typeof device !== 'object') {
+        return normalizeStructuredText(device);
+    }
+
+    const parts = [
+        formatPageLabel(device.page),
+        device.device_type || device.type,
+        device.location || device.equipment_id,
+        device.quantity ? `Qty ${device.quantity}` : null,
+        device.airflow_cfm ? `${device.airflow_cfm} CFM` : null,
+        device.damper_type,
+        device.requires_duct_detector ? `Duct detector: ${device.requires_duct_detector}` : null,
+        device.fire_alarm_action,
+        device.specifications,
+    ].filter(Boolean);
+
+    return parts.map((part) => normalizeStructuredText(part)).filter(Boolean).join(' — ');
+}
+
+function buildRunDetailsLines({ analysis_timestamp: analysisTimestamp, total_pages: totalPages, job_id: jobId }) {
+    const lines = [];
+    if (analysisTimestamp) {
+        const summaryDate = new Date(analysisTimestamp);
+        const dateText = Number.isNaN(summaryDate.getTime()) ? analysisTimestamp : summaryDate.toLocaleString();
+        lines.push(`- **Generated:** ${dateText}`);
+    }
+    if (totalPages !== undefined && totalPages !== null) {
+        lines.push(`- **Total Pages Reviewed:** ${totalPages}`);
+    }
+    if (jobId) {
+        lines.push(`- **Gemini Job ID:** ${jobId}`);
+    }
+    return lines;
+}
+
+function buildSnapshotLines(overview = {}) {
+    const lines = [];
+    appendDetailLine(lines, 'Project', overview.project_name || overview.name);
+    appendDetailLine(lines, 'Location', overview.project_address || overview.project_location || overview.location);
+    appendDetailLine(lines, 'Project Type', overview.project_type);
+    appendDetailLine(lines, 'Project Number', overview.project_number);
+    appendDetailLine(lines, 'Owner / Client', overview.owner);
+    appendDetailLine(lines, 'Architect', overview.architect);
+    appendDetailLine(lines, 'Engineer', overview.engineer);
+    appendDetailLine(lines, 'Fire Alarm Required', overview.fire_alarm_required);
+    appendDetailLine(lines, 'Sprinkler Status', overview.sprinkler_status);
+    appendDetailLine(lines, 'Voice Required', overview.voice_required);
+    appendDetailLine(lines, 'Applicable Codes', overview.applicable_codes);
+    appendDetailLine(lines, 'Scope Summary', overview.scope_summary);
+    return lines;
+}
+
+function buildBriefingLines(briefing = {}, fallbackNotes = [], fireAlarmPages = [], structuredSummary = {}) {
+    const lines = [];
+    const requirements = [...(briefing.requirements || []), ...(briefing.equipment || [])];
+    appendListBlock(lines, 'Key Requirements & Equipment', requirements);
+
+    const estimatingNotes = structuredSummary.sections?.estimating_notes || [];
+    appendListBlock(lines, 'Estimating & Coordination Notes', estimatingNotes);
+
+    const pages = fireAlarmPages.map((page) => formatPageLabel(page));
+    appendListBlock(lines, 'Fire Alarm Focus Pages', pages);
+
+    const noteCandidates =
+        (Array.isArray(briefing.notes) && briefing.notes.length > 0 ? briefing.notes : fallbackNotes) || [];
+    const formattedNotes = noteCandidates.map((note) => formatFireAlarmNote(note));
+    appendListBlock(lines, 'Project-Specific Fire Alarm Notes', formattedNotes);
+
+    return lines;
+}
+
+function buildCodeLines(fireAlarmBriefing = {}, codeRequirements = {}) {
+    const codes = [
+        ...(fireAlarmBriefing.codes || []),
+        ...(codeRequirements.fire_alarm_codes || codeRequirements.fire_alarm_standards || []),
+    ];
+    const lines = [];
+    appendListBlock(lines, 'Referenced Codes & Standards', codes);
+    return lines;
+}
+
+function buildMechanicalLines(mechanicalDevices = {}) {
+    const lines = [];
+    const sections = [
+        ['Duct Detectors', mechanicalDevices.duct_detectors],
+        ['Smoke / Fire Dampers', mechanicalDevices.dampers],
+        ['HVAC Equipment Over 2000 CFM', mechanicalDevices.high_airflow_units],
+    ];
+
+    sections.forEach(([title, devices]) => {
+        const formattedDevices = (devices || []).map((device) => formatMechanicalDevice(device)).filter(Boolean);
+        if (formattedDevices.length > 0) {
+            lines.push(`- **${title}:**`);
+            formattedDevices.forEach((device) => lines.push(`  - ${device}`));
+        }
+    });
+
+    if (lines.length === 0) {
+        lines.push('- No duct detectors, dampers, or high-airflow units were flagged.');
+    }
+
+    return lines;
+}
+
+function buildDeviceLayoutLines(deviceLayout = {}) {
+    const lines = [];
+    const primaryPage = deviceLayout.primary_fa_page || {};
+    const unusual = deviceLayout.unusual_placements || [];
+    const coDetection = deviceLayout.co_detection || {};
+
+    if (primaryPage && Object.keys(primaryPage).length > 0) {
+        const reason = normalizeStructuredText(primaryPage.reason || primaryPage.note);
+        const suffix = reason ? ` — ${reason}` : '';
+        lines.push(`- **Primary FA Layout Page:** ${formatPageLabel(primaryPage.page)}${suffix}`);
+    }
+
+    if (Array.isArray(unusual) && unusual.length > 0) {
+        lines.push('- **Unusual Placements & Reasons:**');
+        unusual.forEach((item) => {
+            const page = formatPageLabel(item.page);
+            const device = item.device_type || 'Device';
+            const placement = normalizeStructuredText(item.placement);
+            const reason = normalizeStructuredText(item.reason || item.impact);
+            const details = [device, placement].filter(Boolean).join(' — ');
+            const suffix = reason ? ` (${reason})` : '';
+            lines.push(`  - ${page}: ${details || device}${suffix}`);
+        });
+    }
+
+    if (coDetection && (coDetection.needed || coDetection.reason)) {
+        const needed = coDetection.needed || 'Unknown';
+        const reason = coDetection.reason ? ` — ${coDetection.reason}` : '';
+        lines.push(`- **CO Detection:** ${needed}${reason}`);
+    }
+
+    return lines;
+}
+
+function buildSpecificationLines(specifications = {}) {
+    const entries = Object.entries(specifications || {}).filter(
+        ([key, value]) => key !== 'error' && value !== undefined && value !== null && value !== ''
+    );
+
+    if (entries.length === 0) {
+        return [];
+    }
+
+    entries.sort(([a], [b]) => a.localeCompare(b));
+    return entries.map(([key, value]) => {
+        const label = key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+        const formatted = formatValue(value);
+        return `- **${label}:** ${formatted}`;
+    });
+}
+
 function buildCopyableSectionsText(data = {}) {
     const lines = ['# Fire Alarm Takeoff Summary'];
+    const structuredSummary = data.structured_summary || {};
     const overview = {
         ...(data.project_info || {}),
         ...(data.high_level_overview || {}),
     };
 
-    const overviewLines = [];
-    appendFormattedLine('Project', overview.project_name || overview.name, overviewLines);
-    appendFormattedLine('Location', overview.project_address || overview.project_location || overview.location, overviewLines);
-    appendFormattedLine('Project Type', overview.project_type, overviewLines);
-    appendFormattedLine('Fire Alarm Required', overview.fire_alarm_required, overviewLines);
-    appendFormattedLine('Sprinkler Status', overview.sprinkler_status, overviewLines);
-    appendFormattedLine('Scope', overview.scope_summary, overviewLines);
+    appendSection(lines, 'Run Details', buildRunDetailsLines(data));
+    appendSection(lines, 'Project Snapshot', buildSnapshotLines(overview));
+    appendSection(
+        lines,
+        'Fire Alarm Briefing',
+        buildBriefingLines(data.fire_alarm_briefing, data.fire_alarm_notes, data.fire_alarm_pages, structuredSummary)
+    );
+    appendSection(lines, 'Fire Alarm Codes & Standards', buildCodeLines(data.fire_alarm_briefing, data.code_requirements));
+    appendSection(lines, 'Mechanical Coordination (Fire Alarm)', buildMechanicalLines(data.mechanical_devices));
+    appendSection(lines, 'Device Placement Review', buildDeviceLayoutLines(data.device_layout_review));
+    appendSection(lines, 'Fire Alarm Specifications', buildSpecificationLines(data.specifications));
 
-    if (overviewLines.length > 0) {
-        lines.push('', '## Project Snapshot', ...overviewLines.map((line) => `- ${line}`));
-    }
-
-    const structuredSummary = data.structured_summary || {};
     const serializedSummary = serializeStructuredSummaryMarkdown(structuredSummary);
     if (serializedSummary) {
         lines.push('', '## AI Structured Summary', serializedSummary);
@@ -3270,22 +3495,12 @@ function buildCopyableSectionsText(data = {}) {
         }
     }
 
-    if (data.analysis_timestamp) {
-        const summaryDate = new Date(data.analysis_timestamp);
-        lines.push('', `Generated: ${summaryDate.toLocaleString()}`);
+    const hasContent = lines.some((line, index) => index > 0 && line && line.trim() && !line.startsWith('#'));
+    if (!hasContent) {
+        return '';
     }
 
     return lines.filter((line) => line !== undefined && line !== null).join('\n');
-}
-
-function appendFormattedLine(label, value, lines = []) {
-    if (!lines || !Array.isArray(lines)) {
-        return;
-    }
-    const normalized = normalizeStructuredText(value);
-    if (normalized) {
-        lines.push(`**${label}:** ${normalized}`);
-    }
 }
 
 function formatValue(value) {
