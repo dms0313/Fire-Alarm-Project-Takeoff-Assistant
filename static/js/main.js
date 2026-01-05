@@ -3183,6 +3183,12 @@ function formatSpecLabel(key) {
         .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatNotionColor(text, color) {
+    const allowed = new Set(['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
+    const safeColor = allowed.has(color) ? color : 'blue';
+    return `<span style="color: ${safeColor}; font-weight: 600;">${text}</span>`;
+}
+
 function copyGeminiSections() {
     if (!latestGeminiResults || !latestGeminiResults.success) {
         setCopyStatus('Run Gemini analysis before copying sections.', 'error');
@@ -3460,7 +3466,7 @@ function buildSpecificationLines(specifications = {}) {
 }
 
 function buildCopyableSectionsText(data = {}) {
-    const lines = ['# Fire Alarm Takeoff Summary', '', '==Formatted for Notion=='];
+    const lines = ['# Fire Alarm Takeoff Summary', '', formatNotionColor('Formatted for Notion', 'blue')];
     const structuredSummary = data.structured_summary || {};
     const overview = {
         ...(data.project_info || {}),
@@ -3490,13 +3496,13 @@ function buildCopyableSectionsText(data = {}) {
     if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
         appendSection(lines, 'Conflicts, Pitfalls & Advice', [], 2, { allowEmpty: true });
         if (conflicts.length > 0) {
-            lines.push('', '### ==Conflicts==', ...conflicts.map((item) => `- ${item}`));
+            lines.push('', `### ${formatNotionColor('Conflicts', 'red')}`, ...conflicts.map((item) => `- ${item}`));
         }
         if (pitfalls.length > 0) {
-            lines.push('', '### ==Pitfalls==', ...pitfalls.map((item) => `- ${item}`));
+            lines.push('', `### ${formatNotionColor('Pitfalls', 'orange')}`, ...pitfalls.map((item) => `- ${item}`));
         }
         if (advisories.length > 0) {
-            lines.push('', '### ==Advisories==', ...advisories.map((item) => `- ${item}`));
+            lines.push('', `### ${formatNotionColor('Advisories', 'purple')}`, ...advisories.map((item) => `- ${item}`));
         }
     }
 
