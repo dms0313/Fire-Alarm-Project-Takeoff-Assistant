@@ -3183,6 +3183,12 @@ function formatSpecLabel(key) {
         .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function formatNotionColor(text, color) {
+    const allowed = new Set(['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
+    const safeColor = allowed.has(color) ? color : 'blue';
+    return `<span style="color: ${safeColor}; font-weight: 600;">${text}</span>`;
+}
+
 function copyGeminiSections() {
     if (!latestGeminiResults || !latestGeminiResults.success) {
         setCopyStatus('Run Gemini analysis before copying sections.', 'error');
@@ -3230,17 +3236,25 @@ function fallbackCopyToClipboard(text, onSuccess, onError) {
     }
 }
 
-function appendSection(lines, title, contentLines) {
-    if (!Array.isArray(contentLines) || contentLines.length === 0) {
+function appendSection(lines, title, contentLines, level = 2, options = {}) {
+    const { allowEmpty = false } = options;
+    if (!allowEmpty && (!Array.isArray(contentLines) || contentLines.length === 0)) {
         return;
     }
 
-    const filtered = contentLines.filter((line) => line !== undefined && line !== null);
-    if (filtered.length === 0) {
+    const filtered = Array.isArray(contentLines)
+        ? contentLines.filter((line) => line !== undefined && line !== null)
+        : [];
+    if (!allowEmpty && filtered.length === 0) {
         return;
     }
 
-    lines.push('', `## ${title}`, ...filtered);
+    const heading = `${'#'.repeat(level)} ${title}`;
+    const needsDivider = lines.length > 0 && lines.some((line) => line && line.trim());
+    if (needsDivider) {
+        lines.push('', '---');
+    }
+    lines.push('', heading, ...filtered);
 }
 
 function appendDetailLine(target, label, value) {
@@ -3452,7 +3466,7 @@ function buildSpecificationLines(specifications = {}) {
 }
 
 function buildCopyableSectionsText(data = {}) {
-    const lines = ['# Fire Alarm Takeoff Summary'];
+    const lines = ['# Fire Alarm Takeoff Summary', '', formatNotionColor('Formatted for Notion', 'blue')];
     const structuredSummary = data.structured_summary || {};
     const overview = {
         ...(data.project_info || {}),
@@ -3473,25 +3487,22 @@ function buildCopyableSectionsText(data = {}) {
 
     const serializedSummary = serializeStructuredSummaryMarkdown(structuredSummary);
     if (serializedSummary) {
-        lines.push('', '## AI Structured Summary', serializedSummary);
+        appendSection(lines, 'AI Structured Summary', [serializedSummary], 2);
     }
 
     const conflicts = collectConflictSignals(structuredSummary);
     const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
     const advisories = collectAdvisoryNotes(structuredSummary);
     if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
-        lines.push('', '## Conflicts, Pitfalls & Advice');
+        appendSection(lines, 'Conflicts, Pitfalls & Advice', [], 2, { allowEmpty: true });
         if (conflicts.length > 0) {
-            lines.push('- **Conflicts:**');
-            conflicts.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', `### ${formatNotionColor('Conflicts', 'red')}`, ...conflicts.map((item) => `- ${item}`));
         }
         if (pitfalls.length > 0) {
-            lines.push('- **Pitfalls:**');
-            pitfalls.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', `### ${formatNotionColor('Pitfalls', 'orange')}`, ...pitfalls.map((item) => `- ${item}`));
         }
         if (advisories.length > 0) {
-            lines.push('- **Advisories:**');
-            advisories.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', `### ${formatNotionColor('Advisories', 'purple')}`, ...advisories.map((item) => `- ${item}`));
         }
     }
 
