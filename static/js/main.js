@@ -3460,7 +3460,7 @@ function buildSpecificationLines(specifications = {}) {
 }
 
 function buildCopyableSectionsText(data = {}) {
-    const lines = ['# Fire Alarm Takeoff Summary', '', '_Formatted for Notion_'];
+    const lines = ['# Fire Alarm Takeoff Summary', '', '==Formatted for Notion=='];
     const structuredSummary = data.structured_summary || {};
     const overview = {
         ...(data.project_info || {}),
@@ -3490,13 +3490,13 @@ function buildCopyableSectionsText(data = {}) {
     if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
         appendSection(lines, 'Conflicts, Pitfalls & Advice', [], 2, { allowEmpty: true });
         if (conflicts.length > 0) {
-            lines.push('', '### Conflicts', ...conflicts.map((item) => `- ${item}`));
+            lines.push('', '### ==Conflicts==', ...conflicts.map((item) => `- ${item}`));
         }
         if (pitfalls.length > 0) {
-            lines.push('', '### Pitfalls', ...pitfalls.map((item) => `- ${item}`));
+            lines.push('', '### ==Pitfalls==', ...pitfalls.map((item) => `- ${item}`));
         }
         if (advisories.length > 0) {
-            lines.push('', '### Advisories', ...advisories.map((item) => `- ${item}`));
+            lines.push('', '### ==Advisories==', ...advisories.map((item) => `- ${item}`));
         }
     }
 
