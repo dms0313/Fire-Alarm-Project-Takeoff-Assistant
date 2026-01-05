@@ -3230,17 +3230,25 @@ function fallbackCopyToClipboard(text, onSuccess, onError) {
     }
 }
 
-function appendSection(lines, title, contentLines) {
-    if (!Array.isArray(contentLines) || contentLines.length === 0) {
+function appendSection(lines, title, contentLines, level = 2, options = {}) {
+    const { allowEmpty = false } = options;
+    if (!allowEmpty && (!Array.isArray(contentLines) || contentLines.length === 0)) {
         return;
     }
 
-    const filtered = contentLines.filter((line) => line !== undefined && line !== null);
-    if (filtered.length === 0) {
+    const filtered = Array.isArray(contentLines)
+        ? contentLines.filter((line) => line !== undefined && line !== null)
+        : [];
+    if (!allowEmpty && filtered.length === 0) {
         return;
     }
 
-    lines.push('', `## ${title}`, ...filtered);
+    const heading = `${'#'.repeat(level)} ${title}`;
+    const needsDivider = lines.length > 0 && lines.some((line) => line && line.trim());
+    if (needsDivider) {
+        lines.push('', '---');
+    }
+    lines.push('', heading, ...filtered);
 }
 
 function appendDetailLine(target, label, value) {
@@ -3452,7 +3460,7 @@ function buildSpecificationLines(specifications = {}) {
 }
 
 function buildCopyableSectionsText(data = {}) {
-    const lines = ['# Fire Alarm Takeoff Summary'];
+    const lines = ['# Fire Alarm Takeoff Summary', '', '==Formatted for Notion=='];
     const structuredSummary = data.structured_summary || {};
     const overview = {
         ...(data.project_info || {}),
@@ -3473,25 +3481,22 @@ function buildCopyableSectionsText(data = {}) {
 
     const serializedSummary = serializeStructuredSummaryMarkdown(structuredSummary);
     if (serializedSummary) {
-        lines.push('', '## AI Structured Summary', serializedSummary);
+        appendSection(lines, 'AI Structured Summary', [serializedSummary], 2);
     }
 
     const conflicts = collectConflictSignals(structuredSummary);
     const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
     const advisories = collectAdvisoryNotes(structuredSummary);
     if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
-        lines.push('', '## Conflicts, Pitfalls & Advice');
+        appendSection(lines, 'Conflicts, Pitfalls & Advice', [], 2, { allowEmpty: true });
         if (conflicts.length > 0) {
-            lines.push('- **Conflicts:**');
-            conflicts.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', '### ==Conflicts==', ...conflicts.map((item) => `- ${item}`));
         }
         if (pitfalls.length > 0) {
-            lines.push('- **Pitfalls:**');
-            pitfalls.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', '### ==Pitfalls==', ...pitfalls.map((item) => `- ${item}`));
         }
         if (advisories.length > 0) {
-            lines.push('- **Advisories:**');
-            advisories.forEach((item) => lines.push(`  - ${item}`));
+            lines.push('', '### ==Advisories==', ...advisories.map((item) => `- ${item}`));
         }
     }
 
