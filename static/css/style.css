@@ -2048,3 +2048,51 @@ textarea {
         width: 100%;
     }
 }
+
+@media (min-width: 1200px) {
+    .app-layout {
+        gap: 20px;
+    }
+
+    .main-content {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.9fr);
+        gap: 28px;
+        align-items: start;
+    }
+
+    .analysis-panel,
+    .gemini-panel {
+        margin-top: 0;
+    }
+
+    .upload-section {
+        padding: 26px;
+        margin-bottom: 16px;
+    }
+
+    .drop-zone {
+        padding: 36px;
+    }
+
+    .spec-drop {
+        padding: 24px;
+    }
+
+    .action-row {
+        justify-content: flex-start;
+    }
+
+    .results-section {
+        padding: 26px;
+    }
+
+    .gemini-header {
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+
+    .gemini-results {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+}
