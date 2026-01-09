@@ -46,6 +46,10 @@ const geminiResultsSection = document.getElementById('geminiResultsSection');
 const geminiStatusMessage = document.getElementById('gemini-status-message');
 const geminiModelSelect = document.getElementById('geminiModelSelect');
 const geminiPanel = document.getElementById('geminiPanel');
+const geminiSystemInstructions = document.getElementById('geminiSystemInstructions');
+const saveGeminiInstructionsBtn = document.getElementById('saveGeminiInstructionsBtn');
+const resetGeminiInstructionsBtn = document.getElementById('resetGeminiInstructionsBtn');
+const geminiInstructionsStatus = document.getElementById('geminiInstructionsStatus');
 const followUpQuestion = document.getElementById('followUpQuestion');
 const askFollowUpBtn = document.getElementById('askFollowUpBtn');
 const followUpStatus = document.getElementById('followUpStatus');
@@ -115,6 +119,7 @@ let latestGeminiResults = null;
 let pageSelectionCollapsed = true;
 let geminiCardIdCounts = {};
 let notionConfigured = false;
+let geminiDefaultSystemInstructions = '';
 const pagePreviewCache = new Map();
 
 const ESTIMATED_LOCAL_DURATION_SECONDS = 80;
@@ -138,6 +143,7 @@ DocumentReady(() => {
     setupHistoryPopup();
     setupNotionTransfer();
     setupSettingsModal();
+    setupGeminiInstructions();
     setPageSelectionCollapsed(true);
     resetGeminiUI();
     checkStatus();
@@ -302,6 +308,65 @@ function setupSettingsModal() {
         if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
             closeModal();
         }
+    });
+}
+
+function setupGeminiInstructions() {
+    if (!geminiSystemInstructions || !saveGeminiInstructionsBtn || !resetGeminiInstructionsBtn) {
+        return;
+    }
+
+    const setStatus = (message = '', tone = '') => {
+        if (!geminiInstructionsStatus) {
+            return;
+        }
+        geminiInstructionsStatus.textContent = message || '';
+        if (tone === 'error') {
+            geminiInstructionsStatus.style.color = '#ffb3b3';
+        } else if (tone === 'success') {
+            geminiInstructionsStatus.style.color = '#9ae6b4';
+        } else {
+            geminiInstructionsStatus.style.color = '';
+        }
+    };
+
+    const syncButtons = (disabled) => {
+        saveGeminiInstructionsBtn.disabled = disabled;
+        resetGeminiInstructionsBtn.disabled = disabled;
+    };
+
+    const saveInstructions = (instructions) => {
+        syncButtons(true);
+        setStatus('Saving instructions...');
+        fetch('/api/set_gemini_instructions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instructions }),
+        })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || !data.success) {
+                    throw new Error(data.error || 'Failed to save instructions');
+                }
+                setStatus('Gemini instructions updated.', 'success');
+                checkStatus();
+            })
+            .catch((error) => {
+                console.error(error);
+                setStatus(error.message, 'error');
+            })
+            .finally(() => {
+                syncButtons(false);
+            });
+    };
+
+    saveGeminiInstructionsBtn.addEventListener('click', () => {
+        saveInstructions(geminiSystemInstructions.value);
+    });
+
+    resetGeminiInstructionsBtn.addEventListener('click', () => {
+        geminiSystemInstructions.value = geminiDefaultSystemInstructions || '';
+        saveInstructions(geminiSystemInstructions.value);
     });
 }
 
@@ -1192,6 +1257,15 @@ function checkStatus() {
                     modelInfo.textContent = modelFilename || 'No model configured';
                 } else {
                     modelInfo.textContent = 'No model configured';
+                }
+            }
+
+            if (geminiSystemInstructions) {
+                if (!geminiSystemInstructions.matches(':focus') && typeof data.gemini_system_instructions === 'string') {
+                    geminiSystemInstructions.value = data.gemini_system_instructions;
+                }
+                if (typeof data.gemini_default_system_instructions === 'string') {
+                    geminiDefaultSystemInstructions = data.gemini_default_system_instructions;
                 }
             }
         })

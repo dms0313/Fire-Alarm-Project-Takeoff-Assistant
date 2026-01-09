@@ -59,6 +59,12 @@ def register_analysis_routes(app, analyzer):
             'gemini_error': getattr(analyzer.gemini_analyzer, 'initialization_error', None),
             'gemini_model': getattr(analyzer.gemini_analyzer, 'current_model', getattr(config, 'GEMINI_MODEL', None)),
             'available_gemini_models': getattr(config, 'GEMINI_MODEL_CHOICES', []),
+            'gemini_system_instructions': getattr(analyzer.gemini_analyzer, 'system_instructions', ''),
+            'gemini_default_system_instructions': getattr(
+                analyzer.gemini_analyzer,
+                'default_system_instructions',
+                '',
+            ),
             'notion_configured': notion_client.is_configured(),
         }
 
@@ -91,6 +97,25 @@ def register_analysis_routes(app, analyzer):
 
         config.GEMINI_MODEL = model
         return jsonify({'success': True, 'gemini_model': model})
+
+    @app.route("/api/set_gemini_instructions", methods=["POST"])
+    def set_gemini_instructions():
+        """Update Gemini system instructions at runtime."""
+
+        payload = request.get_json(silent=True) or {}
+        instructions = payload.get('instructions')
+
+        if instructions is None:
+            return jsonify({'success': False, 'error': 'Instructions are required'}), 400
+
+        if not isinstance(instructions, str):
+            return jsonify({'success': False, 'error': 'Instructions must be a string'}), 400
+
+        analyzer.gemini_analyzer.update_system_instructions(instructions)
+        return jsonify({
+            'success': True,
+            'gemini_system_instructions': analyzer.gemini_analyzer.system_instructions,
+        })
 
     @app.route("/api/analyze", methods=["POST"])
     def analyze_pdf():
