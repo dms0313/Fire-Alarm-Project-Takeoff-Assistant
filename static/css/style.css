@@ -49,7 +49,8 @@ textarea {
 }
 
 .container {
-    max-width: 1320px;
+    max-width: 1680px;
+    width: min(96vw, 1680px);
     margin: 0 auto;
     background: rgba(35, 35, 38, 0.8);
     border: 1px solid rgba(255, 255, 255, 0.04);
@@ -394,7 +395,8 @@ textarea {
     font-size: 0.85rem;
     color: #d7dde7;
     border-radius: 14px;
-    max-width: 1280px;
+    max-width: 1680px;
+    width: min(96vw, 1680px);
     backdrop-filter: blur(6px);
 }
 
