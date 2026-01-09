@@ -29,7 +29,7 @@ from config import (
 )  # Assumes GEMINI_MODEL is in config
 
 
-SYSTEM_INSTRUCTIONS = (
+DEFAULT_SYSTEM_INSTRUCTIONS = (
     "You are an expert Fire Alarm Sales Estimator and Code Consultant. Your goal is to review construction "
     "documents (blueprints and specifications) to extract a precise Bill of Materials (BOM) and scope of work "
     "for a commercial fire alarm system. You must filter out all non-relevant information (e.g., landscaping, "
@@ -95,6 +95,8 @@ class GeminiFireAlarmAnalyzer:
         self.image_max_dimension = int(os.environ.get("GEMINI_IMAGE_MAX_DIMENSION", "1400"))
         self.image_jpeg_quality = int(os.environ.get("GEMINI_IMAGE_JPEG_QUALITY", "80"))
         self.tried_models: List[str] = []
+        self.default_system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
+        self.system_instructions = DEFAULT_SYSTEM_INSTRUCTIONS
 
         if self.api_key:
             self._initialize_model(self.current_model)
@@ -181,10 +183,16 @@ class GeminiFireAlarmAnalyzer:
                 logger.error("Failed to parse JSON even after attempting fixes.")
                 return default
 
-    @staticmethod
-    def _add_system_instruction(prompt: str) -> str:
+    def update_system_instructions(self, instructions: str) -> None:
+        """Update the system instructions used for Gemini prompts."""
+        self.system_instructions = instructions
+
+    def _add_system_instruction(self, prompt: str) -> str:
         """Prefix prompts with the system instruction for SDKs without native support."""
-        return f"{SYSTEM_INSTRUCTIONS}\n\n{prompt}"
+        instructions = (self.system_instructions or "").strip()
+        if not instructions:
+            return prompt
+        return f"{instructions}\n\n{prompt}"
 
     @staticmethod
     def _normalize_candidate_parts(candidate: Any) -> List[str]:
@@ -2390,4 +2398,3 @@ Return JSON with:
             'pitfalls': pitfalls,
             'sections': sections_obj,
         }
-

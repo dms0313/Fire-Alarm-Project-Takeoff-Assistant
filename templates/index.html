@@ -301,6 +301,16 @@
                         <select id="geminiModelSelect" aria-label="Select Gemini text model"></select>
                         <span class="status-helper" id="model-info">-</span>
                     </div>
+                    <div class="settings-textarea">
+                        <label for="geminiSystemInstructions">Gemini System Instructions</label>
+                        <textarea id="geminiSystemInstructions" rows="6" placeholder="Describe how Gemini should analyze your fire alarm scope."></textarea>
+                        <p class="settings-helper">These instructions are prefixed to every Gemini request. Clear the field to send no system prompt.</p>
+                        <div class="settings-actions">
+                            <button class="btn btn-secondary" id="saveGeminiInstructionsBtn" type="button">Save Instructions</button>
+                            <button class="btn" id="resetGeminiInstructionsBtn" type="button">Reset to Default</button>
+                        </div>
+                        <span class="status-helper" id="geminiInstructionsStatus"> </span>
+                    </div>
                 </div>
             </div>
         </div>
