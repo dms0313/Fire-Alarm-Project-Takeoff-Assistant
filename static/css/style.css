@@ -12,7 +12,7 @@ body {
         radial-gradient(circle at 80% 30%, rgba(69, 183, 209, 0.08) 0, transparent 32%),
         linear-gradient(200deg, #0f1115 0%, #0f1115 60%, #043443 90%);
     color: #e8e8ed;
-    padding: 24px 20px 60px;
+    padding: 32px 40px 80px;
     min-height: 100vh;
 }
 
@@ -50,12 +50,12 @@ textarea {
 
 .container {
     width: 100%;
-    max-width: none;
-    margin: 0;
+    max-width: 100%;
+    margin: 0 auto;
     background: transparent;
     border: none;
     border-radius: 0;
-    padding: 0 32px;
+    padding: 0;
     box-shadow: none;
     backdrop-filter: none;
 }
@@ -163,14 +163,16 @@ textarea {
 .app-layout {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 32px;
     align-items: stretch;
+    width: 100%;
 }
 
 .main-content {
     display: flex;
     flex-direction: column;
-    gap: 22px;
+    gap: 28px;
+    width: 100%;
 }
 
 .app-title {
@@ -385,20 +387,67 @@ textarea {
     gap: 10px;
 }
 
+@media (max-width: 768px) {
+    body {
+        padding: 20px 16px 70px;
+    }
+
+    .app-title {
+        font-size: clamp(1.6rem, 5vw, 2.5rem);
+    }
+
+    .upload-section {
+        padding: 28px 20px;
+    }
+
+    .drop-zone {
+        padding: 40px 24px;
+    }
+
+    .drop-zone-icon {
+        font-size: 3.5em;
+    }
+
+    .btn {
+        padding: 14px 28px;
+        font-size: 1rem;
+        width: 100%;
+    }
+
+    .action-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .status-footer {
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px 20px;
+    }
+
+    .gemini-header {
+        padding: 20px;
+    }
+
+    .gemini-results {
+        grid-template-columns: 1fr;
+    }
+}
+
 .status-footer {
     background: linear-gradient(135deg, rgba(30, 30, 35, 0.95), rgba(20, 20, 25, 0.98));
     border: 1px solid rgba(78, 205, 196, 0.15);
-    padding: 16px 24px;
-    margin: 30px 32px 0 32px;
+    padding: 16px 32px;
+    margin: 40px 0 0 0;
     display: flex;
     justify-content: center;
-    gap: 24px;
+    gap: 32px;
     flex-wrap: wrap;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     color: #d7dde7;
     border-radius: 12px;
-    max-width: none;
-    width: auto;
+    max-width: 100%;
+    width: 100%;
     backdrop-filter: blur(10px);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
@@ -459,13 +508,13 @@ textarea {
 }
 
 .upload-section {
-    background: linear-gradient(150deg, rgba(12, 119, 126, 0.15) 0%, rgba(33, 28, 49, 0.4) 100%);
-    padding: 36px;
-    border-radius: 16px;
-    margin-bottom: 24px;
+    background: linear-gradient(150deg, rgba(12, 119, 126, 0.18) 0%, rgba(33, 28, 49, 0.45) 100%);
+    padding: 44px;
+    border-radius: 20px;
+    margin-bottom: 28px;
     text-align: center;
-    border: 1px solid rgba(78, 205, 196, 0.2);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(78, 205, 196, 0.25);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
 }
 
 .tab-container {
@@ -725,27 +774,27 @@ textarea {
 }
 
 .drop-zone {
-    border: 2px dashed rgba(78, 205, 196, 0.4);
-    border-radius: 16px;
-    padding: 48px 32px;
+    border: 2px dashed rgba(78, 205, 196, 0.5);
+    border-radius: 20px;
+    padding: 60px 40px;
     cursor: pointer;
     transition: all 0.3s ease;
-    margin-bottom: 20px;
-    background: linear-gradient(145deg, rgba(26, 26, 30, 0.9) 0%, rgba(20, 20, 24, 0.95) 100%);
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.2);
+    margin-bottom: 24px;
+    background: linear-gradient(145deg, rgba(26, 26, 30, 0.95) 0%, rgba(20, 20, 24, 0.98) 100%);
+    box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
 .drop-zone:hover,
 .drop-zone.drag-over {
     border-color: #4ECDC4;
-    background: linear-gradient(145deg, rgba(78, 205, 196, 0.08) 0%, rgba(26, 26, 30, 0.95) 100%);
-    box-shadow: 0 0 30px rgba(78, 205, 196, 0.15), inset 0 2px 8px rgba(0, 0, 0, 0.2);
-    transform: translateY(-2px);
+    background: linear-gradient(145deg, rgba(78, 205, 196, 0.1) 0%, rgba(26, 26, 30, 0.98) 100%);
+    box-shadow: 0 0 40px rgba(78, 205, 196, 0.2), inset 0 2px 10px rgba(0, 0, 0, 0.25);
+    transform: translateY(-3px);
 }
 
 .drop-zone-icon {
-    font-size: 4em;
-    margin-bottom: 15px;
+    font-size: 4.5em;
+    margin-bottom: 18px;
 }
 
 .options-grid {
@@ -830,20 +879,20 @@ textarea {
     background: linear-gradient(135deg, #ff6b6b 0%, #ff8787 100%);
     color: white;
     border: none;
-    padding: 14px 36px;
+    padding: 16px 40px;
     font-size: 1.1rem;
     font-weight: 600;
-    border-radius: 12px;
+    border-radius: 14px;
     cursor: pointer;
     transition: all 0.25s ease;
-    box-shadow: 0 4px 16px rgba(255, 107, 107, 0.3);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.35);
     margin-top: 20px;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.4px;
 }
 
 .btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(255, 107, 107, 0.4);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 28px rgba(255, 107, 107, 0.45);
 }
 
 .btn:disabled {
@@ -2119,49 +2168,67 @@ textarea {
 }
 
 @media (min-width: 1200px) {
+    body {
+        padding: 40px 60px 100px;
+    }
+
     .app-layout {
-        gap: 24px;
+        gap: 36px;
     }
 
     .main-content {
-        display: grid;
-        grid-template-columns: 1.5fr 1fr;
-        gap: 32px;
-        align-items: start;
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+        align-items: stretch;
+        width: 100%;
     }
 
     .analysis-panel,
     .gemini-panel {
         margin-top: 0;
+        width: 100%;
     }
 
     .upload-section {
-        padding: 32px;
-        margin-bottom: 20px;
+        padding: 40px;
+        margin-bottom: 24px;
     }
 
     .drop-zone {
-        padding: 40px 32px;
+        padding: 56px 48px;
     }
 
     .spec-drop {
-        padding: 28px;
+        padding: 36px;
     }
 
     .action-row {
-        justify-content: flex-start;
+        justify-content: center;
+        gap: 20px;
     }
 
     .results-section {
-        padding: 28px;
+        padding: 36px;
     }
 
     .gemini-header {
-        padding: 24px;
-        margin-bottom: 20px;
+        padding: 32px;
+        margin-bottom: 24px;
     }
 
     .gemini-results {
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 24px;
+    }
+
+    .results-summary {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 24px;
+    }
+
+    .page-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 20px;
     }
 }
