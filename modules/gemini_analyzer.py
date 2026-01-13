@@ -1112,11 +1112,12 @@ class GeminiFireAlarmAnalyzer:
             estimating_notes,
         )
 
+        # Note: high_level_overview, fire_alarm_briefing, and structured_summary
+        # have been removed to eliminate duplication in the API response.
+        # Frontend now uses raw data fields directly.
         results = {
             'success': True,
             'project_info': project_info,
-            'high_level_overview': high_level_overview,
-            'fire_alarm_briefing': fire_alarm_briefing,
             'code_requirements': codes,
             'fire_alarm_pages': fa_pages,
             'fire_alarm_notes': fa_notes,
@@ -1124,7 +1125,6 @@ class GeminiFireAlarmAnalyzer:
             'device_layout_review': device_layout_review,
             'specifications': specifications,
             'spec_book_context': None,
-            'structured_summary': structured_summary,
             'possible_pitfalls': possible_pitfalls,
             'estimating_notes': estimating_notes,
             'total_pages': len(pages_text),

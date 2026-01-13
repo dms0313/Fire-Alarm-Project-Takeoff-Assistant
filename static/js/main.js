@@ -1859,24 +1859,25 @@ function displayGeminiResults(data, options = {}) {
 
     const {
         project_info: projectInfo = {},
-        high_level_overview: highLevelOverview = {},
-        fire_alarm_briefing: fireAlarmBriefing = {},
         code_requirements: codeRequirements = {},
         fire_alarm_pages: fireAlarmPages = [],
         fire_alarm_notes: fireAlarmNotes = [],
         mechanical_devices: mechanicalDevices = {},
         device_layout_review: deviceLayoutReview = {},
         specifications = {},
-        structured_summary: structuredSummary = {},
+        possible_pitfalls: possiblePitfalls = [],
+        estimating_notes: estimatingNotes = [],
         total_pages: totalPages,
         analysis_timestamp: analysisTimestamp,
+        code_based_expectations: codeBasedExpectations = {},
     } = data;
 
-    const overviewCard = buildHighLevelOverviewCard(highLevelOverview, projectInfo);
+    // Build cards using raw data (no more pre-formatted summaries from backend)
+    const overviewCard = buildHighLevelOverviewCard({}, projectInfo);
 
     const briefingCard = buildFireAlarmBriefingCard(
-        fireAlarmBriefing,
-        structuredSummary,
+        {}, // Backend no longer sends pre-formatted briefing
+        {}, // Backend no longer sends structured_summary
         fireAlarmNotes,
         fireAlarmPages
     );
@@ -1885,7 +1886,7 @@ function displayGeminiResults(data, options = {}) {
 
     const deviceLayoutCard = buildDeviceLayoutCard(deviceLayoutReview);
 
-    const pitfallsCard = buildPitfallsCard(structuredSummary, data.possible_pitfalls || data.pitfalls);
+    const pitfallsCard = buildPitfallsCard({}, possiblePitfalls);
 
     const summaryCard = buildSummaryCard(totalPages, analysisTimestamp);
 
@@ -3541,42 +3542,31 @@ function buildSpecificationLines(specifications = {}) {
 
 function buildCopyableSectionsText(data = {}) {
     const lines = ['# Fire Alarm Takeoff Summary', '', formatNotionColor('Formatted for Notion', 'blue')];
-    const structuredSummary = data.structured_summary || {};
-    const overview = {
-        ...(data.project_info || {}),
-        ...(data.high_level_overview || {}),
-    };
+    // Use raw project_info data directly (no more pre-formatted summaries)
+    const overview = data.project_info || {};
 
     appendSection(lines, 'Run Details', buildRunDetailsLines(data));
     appendSection(lines, 'Project Snapshot', buildSnapshotLines(overview));
     appendSection(
         lines,
         'Fire Alarm Briefing',
-        buildBriefingLines(data.fire_alarm_briefing, data.fire_alarm_notes, data.fire_alarm_pages, structuredSummary)
+        buildBriefingLines({}, data.fire_alarm_notes, data.fire_alarm_pages, {})
     );
-    appendSection(lines, 'Fire Alarm Codes & Standards', buildCodeLines(data.fire_alarm_briefing, data.code_requirements));
+    appendSection(lines, 'Fire Alarm Codes & Standards', buildCodeLines({}, data.code_requirements));
     appendSection(lines, 'Mechanical Coordination (Fire Alarm)', buildMechanicalLines(data.mechanical_devices));
     appendSection(lines, 'Device Placement Review', buildDeviceLayoutLines(data.device_layout_review));
     appendSection(lines, 'Fire Alarm Specifications', buildSpecificationLines(data.specifications));
 
-    const serializedSummary = serializeStructuredSummaryMarkdown(structuredSummary);
-    if (serializedSummary) {
-        appendSection(lines, 'AI Structured Summary', [serializedSummary], 2);
-    }
-
-    const conflicts = collectConflictSignals(structuredSummary);
-    const pitfalls = extractPitfallItems(structuredSummary, data.possible_pitfalls || data.pitfalls);
-    const advisories = collectAdvisoryNotes(structuredSummary);
-    if (conflicts.length > 0 || pitfalls.length > 0 || advisories.length > 0) {
-        appendSection(lines, 'Conflicts, Pitfalls & Advice', [], 2, { allowEmpty: true });
-        if (conflicts.length > 0) {
-            lines.push('', `### ${formatNotionColor('Conflicts', 'red')}`, ...conflicts.map((item) => `- ${item}`));
-        }
+    // Display pitfalls and estimating notes directly from raw data
+    const pitfalls = data.possible_pitfalls || data.pitfalls || [];
+    const estimatingNotes = data.estimating_notes || [];
+    if (pitfalls.length > 0 || estimatingNotes.length > 0) {
+        appendSection(lines, 'Pitfalls & Estimating Notes', [], 2, { allowEmpty: true });
         if (pitfalls.length > 0) {
             lines.push('', `### ${formatNotionColor('Pitfalls', 'orange')}`, ...pitfalls.map((item) => `- ${item}`));
         }
-        if (advisories.length > 0) {
-            lines.push('', `### ${formatNotionColor('Advisories', 'purple')}`, ...advisories.map((item) => `- ${item}`));
+        if (estimatingNotes.length > 0) {
+            lines.push('', `### ${formatNotionColor('Estimating Notes', 'blue')}`, ...estimatingNotes.map((item) => `- ${item}`));
         }
     }
 
