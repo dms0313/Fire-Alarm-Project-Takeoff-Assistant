@@ -32,12 +32,6 @@ class NotionClient:
             or project_info.get("location")
         )
         status = project_info.get("status") or "In progress"
-        company = (
-            project_info.get("owner")
-            or project_info.get("architect")
-            or project_info.get("engineer")
-        )
-
         properties: Dict[str, Any] = {
             "Name": {
                 "title": [
@@ -56,17 +50,6 @@ class NotionClient:
                     {
                         "text": {
                             "content": address,
-                        }
-                    }
-                ]
-            }
-
-        if company:
-            properties["Company"] = {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": company,
                         }
                     }
                 ]

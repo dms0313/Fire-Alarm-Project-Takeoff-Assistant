@@ -31,19 +31,29 @@ from config import (
 
 DEFAULT_SYSTEM_INSTRUCTIONS = (
     "You are an expert Fire Alarm Sales Estimator and Code Consultant. Your goal is to review construction "
-    "documents (blueprints and specifications) to extract a precise Bill of Materials (BOM) and scope of work "
-    "for a commercial fire alarm system. You must filter out all non-relevant information (e.g., landscaping, "
-    "civil, structural, plumbing) and focus strictly Fire Alarm requirements.\n\n"
+    "documents (blueprints and specifications) to extract a precise scope of work and estimated labor involved "
+    "to install a code-compliant commercial fire alarm system. You must filter out all non-relevant information "
+    "(e.g., landscaping, civil, structural, plumbing, architectural) and focus strictly on project specific Fire Alarm requirements.\n\n"
     "You are deeply knowledgeable in:\n"
-    "- NFPA 72 (National Fire Alarm and Signaling Code)\n"
-    "- NFPA 101 (Life Safety Code)\n"
-    "- IBC (International Building Code)\n\n"
-    "When analyzing documents:\n"
-    "1. Identify the applicable code versions (e.g., NFPA 72-2016, IBC 2018).\n"
-    "2. Cross-check project requirements against these codes to identify potential errors or missing devices.\n"
-    "3. Always check Mechanical/HVAC plans for Duct Detectors and Fire/Smoke Dampers that require FA monitoring.\n"
-    "4. Look for 'Class A' vs 'Class B' wiring requirements.\n"
-    "5. Verify if Voice Evacuation is required."
+    "   • Fire alarm system design and installation\n"
+    "   • Experienced in other construction trades, especially when related to fire alarm systems\n"
+    "   • NFPA 72 & 101 (Life Safety Code)\n"
+    "   • IBC (International Building Code)\n"
+    "   • Knowledgeable on the AHJ plan review and submittal process at the local level\n"
+    "   • Common pitfalls and problems that could arise during installation\n\n"
+    "CRITICAL ANALYSIS RULES:\n"
+    "1. Identify the applicable code versions (e.g., NFPA 72, NFPA 101, IBC), and compare that against the project specs and requirements.\n"
+    "2. When providing project requirements and specs, provide me with the minimum system and devices required to pass inspection, even if the drawings specify otherwise.\n"
+    "3. Always review Mechanical/HVAC plans:\n"
+    "   • Check for Duct Detectors and Fire/Smoke Dampers. If any keyed/project specific notes are shown on those pages, provide this information in your response.\n"
+    "   • Review the HVAC schedule table for a count of any HVAC equipment over 2,000CFM. If CFM is over 2,000, HIGHLIGHT that in your response.\n"
+    "4. When cross-referencing project requirements with NFPA code requirements, determine if the following is required, even if not specified in the drawings:\n"
+    "   • Voice evacuation/voice panel\n"
+    "   • CO detection\n"
+    "   • Explosion proof equipment\n"
+    "5. Access Control Integration: If access control information is shown on plans, provide details or a list/count of doors with electric strikes that need to release on fire alarm, per code requirements.\n"
+    "6. Device Placement Intelligence: Keep in mind that just because the symbol legend shows a specific type of device, it does not mean it's included in that current set of drawings. Only report devices that are actually shown on the plans.\n"
+    "7. Competitive Advantage: If you recognize a potential way to gain an edge over competing bidders, provide advice or recommendations to have an advantage.\n"
 )
 
 logger = logging.getLogger("fire-alarm-analyzer")
@@ -90,7 +100,7 @@ class GeminiFireAlarmAnalyzer:
         self.last_prompt_feedback: Optional[Dict[str, Any]] = None
         self.max_retries = int(os.environ.get("GEMINI_MAX_RETRIES", "2"))
         self.request_timeout = int(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "240"))
-        self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "8"))
+        self.max_image_pages = int(os.environ.get("GEMINI_MAX_IMAGE_PAGES", "15"))
         self.image_render_dpi = int(os.environ.get("GEMINI_IMAGE_DPI", "200"))
         self.image_max_dimension = int(os.environ.get("GEMINI_IMAGE_MAX_DIMENSION", "1400"))
         self.image_jpeg_quality = int(os.environ.get("GEMINI_IMAGE_JPEG_QUALITY", "80"))
@@ -519,6 +529,7 @@ class GeminiFireAlarmAnalyzer:
             "duct smoke detector",
             "fac",
             "smoke control",
+            "FA101",
         ]
 
         return any(keyword in text_lower for keyword in keywords)
@@ -1063,73 +1074,28 @@ class GeminiFireAlarmAnalyzer:
             default=composite_defaults,
         ) or composite_defaults
 
-        project_info = composite_response.get('project_info', {}) or {}
-        codes = composite_response.get('code_requirements', {}) or {'fire_alarm_codes': []}
-        fa_notes = composite_response.get('fire_alarm_notes', []) or []
-        mechanical_devices = composite_response.get('mechanical_devices', {}) or {
-            'duct_detectors': [],
-            'dampers': [],
-            'high_airflow_units': [],
-        }
-        device_layout_review = composite_response.get('device_layout_review', {}) or {
-            'primary_fa_page': {},
-            'unusual_placements': [],
-            'co_detection': {'needed': None, 'reason': None},
-        }
-        specifications = composite_response.get('specifications', {}) or {}
+        scope_summary = composite_response.get('scope_summary', None)
+        project_details = composite_response.get('project_details', {}) or {}
+        fire_alarm_details = composite_response.get('fire_alarm_details', {}) or {}
+        hvac_mechanical = composite_response.get('hvac_mechanical', {}) or {}
+        competitive_advantages = composite_response.get('competitive_advantages', []) or []
         possible_pitfalls = composite_response.get('possible_pitfalls', []) or []
         estimating_notes = composite_response.get('estimating_notes', []) or []
 
-        # Step 9: If the documents show no FA content, derive code-based expectations
-        logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
-        code_based_expectations = safe_step(
-            self._derive_code_based_expectations,
-            focused_pages,
-            codes,
-            default={},
-        ) if not fa_pages else {}
-
-        high_level_overview = self._build_high_level_overview(
-            project_info, specifications
-        )
-        fire_alarm_briefing = self._build_fire_alarm_briefing(
-            codes,
-            specifications,
-            fa_notes,
-            device_layout_review,
-            code_based_expectations,
-        )
-
-        structured_summary = self._build_structured_summary(
-            project_info,
-            specifications,
-            codes,
-            fa_notes,
-            mechanical_devices,
-            device_layout_review,
-            code_based_expectations,
-            possible_pitfalls,
-            estimating_notes,
-        )
-
-        # Note: high_level_overview, fire_alarm_briefing, and structured_summary
-        # have been removed to eliminate duplication in the API response.
-        # Frontend now uses raw data fields directly.
+        # Build the standardized results structure
         results = {
             'success': True,
-            'project_info': project_info,
-            'code_requirements': codes,
-            'fire_alarm_pages': fa_pages,
-            'fire_alarm_notes': fa_notes,
-            'mechanical_devices': mechanical_devices,
-            'device_layout_review': device_layout_review,
-            'specifications': specifications,
-            'spec_book_context': None,
+            'scope_summary': scope_summary,
+            'project_details': project_details,
+            'fire_alarm_details': fire_alarm_details,
+            'hvac_mechanical': hvac_mechanical,
+            'competitive_advantages': competitive_advantages,
             'possible_pitfalls': possible_pitfalls,
             'estimating_notes': estimating_notes,
+            'fire_alarm_pages': fa_pages,
+            'spec_book_context': None,
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat(),
-            'code_based_expectations': code_based_expectations,
         }
 
         if spec_sections:
@@ -1151,20 +1117,34 @@ class GeminiFireAlarmAnalyzer:
         """Default empty shell for consolidated Gemini extraction."""
 
         return {
-            'project_info': {},
-            'code_requirements': {'fire_alarm_codes': []},
-            'fire_alarm_notes': [],
-            'mechanical_devices': {
-                'duct_detectors': [],
-                'dampers': [],
-                'high_airflow_units': [],
+            'scope_summary': None,
+            'project_details': {
+                'project_name': None,
+                'project_address': None,
+                'new_or_existing': None,
+                'project_type': None,
+                'building_type': None,
+                'applicable_codes': [],
+                'occupancy_type': None,
             },
-            'device_layout_review': {
-                'primary_fa_page': {},
-                'unusual_placements': [],
-                'co_detection': {'needed': None, 'reason': None},
+            'fire_alarm_details': {
+                'fire_alarm_required': None,
+                'sprinkler_status': None,
+                'panel_status': None,
+                'existing_panel_manufacturer': None,
+                'layout_page_provided': None,
+                'voice_required': None,
+                'co_required': None,
+                'fire_doors_present': None,
+                'fire_barriers_present': None,
             },
-            'specifications': {},
+            'hvac_mechanical': {
+                'hvac_equipment': [],
+                'fire_smoke_dampers_present': None,
+                'smoke_dampers_present': None,
+                'access_control_doors': [],
+            },
+            'competitive_advantages': [],
             'possible_pitfalls': [],
             'estimating_notes': [],
         }
@@ -1232,21 +1212,53 @@ SPEC EXCERPTS (IF ANY):
 {image_note}
 
 Return a JSON object with these keys:
-- project_info: {{project_name, project_address, project_location, project_type, applicable_codes, fire_alarm_required, sprinkler_status, scope_summary, voice_required, project_number, owner, architect, engineer}}
-- code_requirements: {{fire_alarm_codes: array of strings, code_notes: string or null}}
-- fire_alarm_notes: array of objects {{page, note_type, content}}
-- mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
-- device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
-- specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
-- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
-- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
 
-Rules:
+1. scope_summary: A concise 2-3 sentence summary of the project scope from a fire alarm perspective.
+   Example: "New construction of a daycare center in Overland Park, KS. Project requires design-build fire alarm system for a warehouse and office tenant finish. Includes notification (horns/strobes), sprinkler monitoring, and HVAC shutdown."
+
+2. project_details: {{
+   - project_name: Name on title/cover page
+   - project_address: Street address or city/state reference
+   - new_or_existing: "new", "existing to remain", "retrofit", etc.
+   - project_type: "Remodel", "Tenant Improvement", "New Construction", "Tenant Build Out", "White Box/Shell", etc.
+   - building_type: "middle school", "high school", "open warehouse", "office space", "manufacturing", "childcare center", etc.
+   - applicable_codes: array of code references (e.g., ["NFPA 72-2019", "IBC 2018", "NFPA 101-2018"])
+   - occupancy_type: IBC occupancy classification (e.g., "B - Business", "E - Educational", "A-3 - Assembly")
+}}
+
+3. fire_alarm_details: {{
+   - fire_alarm_required: "yes" or "no"
+   - sprinkler_status: "yes" or "no"
+   - panel_status: "new", "existing to remain", "retrofit", etc.
+   - existing_panel_manufacturer: Manufacturer name if existing panel (Common: Honeywell, Siemens, Johnson Controls, JCI, Simplex, Notifier, Gamewell-FCI, Silent Knight, ADT, Tyco, Bosch, FireLite, Potter, Mircom) or null
+   - layout_page_provided: "Yes" or "No". If yes, include page number (e.g., "Yes - FA101"). Indicate if FA devices are shown on power plan or other pages.
+   - voice_required: "yes" or "no"
+   - co_required: "yes" or "no"
+   - fire_doors_present: "yes" or "no"
+   - fire_barriers_present: "yes" or "no"
+}}
+
+4. hvac_mechanical: {{
+   - hvac_equipment: array of objects with {{model: string, cfm: number, over_2000_cfm: boolean, page: number}}. HIGHLIGHT units with CFM over 2,000.
+   - fire_smoke_dampers_present: "yes" or "no" or null
+   - smoke_dampers_present: "yes" or "no" or null
+   - access_control_doors: array of objects with {{location: string, door_count: number, electric_strike_release_required: boolean, page: number}}
+}}
+
+5. competitive_advantages: array of strings containing advice or recommendations to gain an edge over competing bidders
+
+6. possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
+
+7. estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
+
+CRITICAL RULES:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
-- Do not invent devices or notes; prioritize project-specific content.
+- Do not invent devices or notes; prioritize project-specific content only.
 - Keep strings short (<= 280 characters) and preserve key terminology from the source pages.
-- Use the same mechanical device shapes as prior prompts: include airflow_cfm and requires_duct_detector when stated.
-- Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful. If there are no project-specific pitfalls or notes, leave the arrays empty instead of adding placeholders.
+- Remember: Just because the symbol legend shows a device type doesn't mean it's actually shown in the drawings. Only report what is ACTUALLY present.
+- HVAC equipment over 2,000 CFM must be flagged with over_2000_cfm: true
+- Do not repeat the same pitfall or note in multiple fields; deduplicate wording and cite context briefly when helpful.
+- If there are no project-specific items for a field, leave arrays empty instead of adding placeholders.
 """
         )
 
