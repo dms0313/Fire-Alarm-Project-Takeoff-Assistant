@@ -1870,10 +1870,13 @@ function displayGeminiResults(data, options = {}) {
         total_pages: totalPages,
         analysis_timestamp: analysisTimestamp,
         code_based_expectations: codeBasedExpectations = {},
+        // New standardized fields
+        project_details: projectDetails = {},
+        fire_alarm_details: fireAlarmDetails = {},
     } = data;
 
     // Build cards using raw data (no more pre-formatted summaries from backend)
-    const overviewCard = buildHighLevelOverviewCard({}, projectInfo);
+    const overviewCard = buildHighLevelOverviewCard({}, projectInfo, projectDetails, fireAlarmDetails);
 
     const briefingCard = buildFireAlarmBriefingCard(
         {}, // Backend no longer sends pre-formatted briefing
@@ -2040,27 +2043,48 @@ function displayGeminiError(message) {
     geminiResultsSection.appendChild(card);
 }
 
-function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}) {
+function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}, projectDetails = {}, fireAlarmDetails = {}) {
     const resolved = {
         ...fallbackProjectInfo,
         ...overview,
     };
 
+    // Merge project_details if available
+    const details = projectDetails || {};
+    const faDetails = fireAlarmDetails || {};
+
     const rows = [
-        ['Project Name', resolved.project_name || resolved.name],
-        ['Address / Location', resolved.project_address || resolved.project_location || resolved.location],
-        ['Project Type', resolved.project_type],
-        ['Fire Alarm Required', resolved.fire_alarm_required],
-        ['Sprinkler Status', resolved.sprinkler_status],
+        ['Project Name', details.project_name || resolved.project_name || resolved.name],
+        ['Address / Location', details.project_address || resolved.project_address || resolved.project_location || resolved.location],
+        ['New or Existing', details.new_or_existing],
+        ['Project Type', details.project_type || resolved.project_type],
+        ['Building Type', details.building_type],
+        ['Occupancy Type', details.occupancy_type],
     ];
 
-    const hasContent = rows.some(([, value]) => value) || resolved.scope_summary;
+    const hasContent = rows.some(([, value]) => value) || resolved.scope_summary || details.applicable_codes;
     if (!hasContent) {
         return null;
     }
 
     const { card, content } = createGeminiCard('Project Snapshot', 'full-width');
     rows.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
+
+    // Add applicable codes if present
+    if (details.applicable_codes && Array.isArray(details.applicable_codes) && details.applicable_codes.length > 0) {
+        const codesHeading = document.createElement('h4');
+        codesHeading.textContent = 'Applicable Codes';
+        content.appendChild(codesHeading);
+
+        const chipContainer = document.createElement('div');
+        details.applicable_codes.forEach((code) => {
+            const chip = document.createElement('span');
+            chip.className = 'gemini-chip';
+            chip.textContent = code;
+            chipContainer.appendChild(chip);
+        });
+        content.appendChild(chipContainer);
+    }
 
     if (resolved.scope_summary) {
         const scopeHeading = document.createElement('h4');
@@ -2070,6 +2094,32 @@ function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}) {
         const scopeParagraph = document.createElement('p');
         scopeParagraph.textContent = resolved.scope_summary;
         content.appendChild(scopeParagraph);
+    }
+
+    // Add Fire Alarm Details section
+    const faRows = [
+        ['Fire Alarm Required', faDetails.fire_alarm_required || resolved.fire_alarm_required],
+        ['Sprinkler Status', faDetails.sprinkler_status || resolved.sprinkler_status],
+        ['Panel Status', faDetails.panel_status],
+        ['Existing Panel Manufacturer', faDetails.existing_panel_manufacturer],
+        ['Layout Page Provided', faDetails.layout_page_provided],
+        ['Voice Required', faDetails.voice_required],
+        ['CO Required', faDetails.co_required],
+        ['Fire Doors Present', faDetails.fire_doors_present],
+        ['Fire Barriers Present', faDetails.fire_barriers_present],
+    ];
+
+    const hasFaContent = faRows.some(([, value]) => value);
+    if (hasFaContent) {
+        const faHeading = document.createElement('h4');
+        faHeading.textContent = 'Fire Alarm Details';
+        content.appendChild(faHeading);
+
+        faRows.forEach(([label, value]) => {
+            if (value) {
+                content.appendChild(createInfoRow(label, value));
+            }
+        });
     }
 
     return card;
@@ -2132,22 +2182,6 @@ function buildFireAlarmBriefingCard(briefing = {}, structuredSummary = {}, fireA
         populated = true;
     }
 
-    const pages = Array.isArray(fireAlarmPages) ? fireAlarmPages : [];
-    if (pages.length > 0) {
-        const pageHeading = document.createElement('h4');
-        pageHeading.textContent = 'Fire Alarm Focus Pages';
-        content.appendChild(pageHeading);
-
-        const chipContainer = document.createElement('div');
-        pages.forEach((page) => {
-            const chip = document.createElement('span');
-            chip.className = 'gemini-chip';
-            chip.textContent = `Page ${page}`;
-            chipContainer.appendChild(chip);
-        });
-        content.appendChild(chipContainer);
-        populated = true;
-    }
 
     const notes = Array.isArray(briefing.notes) && briefing.notes.length > 0 ? briefing.notes : fireAlarmNotes;
     if (Array.isArray(notes) && notes.length > 0) {
