@@ -1074,25 +1074,61 @@ class GeminiFireAlarmAnalyzer:
             default=composite_defaults,
         ) or composite_defaults
 
+        # Extract original fields
+        project_info = composite_response.get('project_info', {}) or {}
+        codes = composite_response.get('code_requirements', {}) or {'fire_alarm_codes': []}
+        fa_notes = composite_response.get('fire_alarm_notes', []) or []
+        mechanical_devices = composite_response.get('mechanical_devices', {}) or {
+            'duct_detectors': [],
+            'dampers': [],
+            'high_airflow_units': [],
+        }
+        device_layout_review = composite_response.get('device_layout_review', {}) or {
+            'primary_fa_page': {},
+            'unusual_placements': [],
+            'co_detection': {'needed': None, 'reason': None},
+        }
+        specifications = composite_response.get('specifications', {}) or {}
+        possible_pitfalls = composite_response.get('possible_pitfalls', []) or []
+        estimating_notes = composite_response.get('estimating_notes', []) or []
+
+        # Extract new standardized fields
         scope_summary = composite_response.get('scope_summary', None)
         project_details = composite_response.get('project_details', {}) or {}
         fire_alarm_details = composite_response.get('fire_alarm_details', {}) or {}
         hvac_mechanical = composite_response.get('hvac_mechanical', {}) or {}
         competitive_advantages = composite_response.get('competitive_advantages', []) or []
-        possible_pitfalls = composite_response.get('possible_pitfalls', []) or []
-        estimating_notes = composite_response.get('estimating_notes', []) or []
 
-        # Build the standardized results structure
+        # Step 9: If the documents show no FA content, derive code-based expectations
+        logger.info("Deriving code-based expectations (if no fire alarm content is shown)...")
+        code_based_expectations = safe_step(
+            self._derive_code_based_expectations,
+            focused_pages,
+            codes,
+            default={},
+        ) if not fa_pages else {}
+
+        # Build results with both original and new fields
         results = {
             'success': True,
+            # Original fields
+            'project_info': project_info,
+            'code_requirements': codes,
+            'fire_alarm_pages': fa_pages,
+            'fire_alarm_notes': fa_notes,
+            'mechanical_devices': mechanical_devices,
+            'device_layout_review': device_layout_review,
+            'specifications': specifications,
+            'possible_pitfalls': possible_pitfalls,
+            'estimating_notes': estimating_notes,
+            'code_based_expectations': code_based_expectations,
+            # New standardized fields
             'scope_summary': scope_summary,
             'project_details': project_details,
             'fire_alarm_details': fire_alarm_details,
             'hvac_mechanical': hvac_mechanical,
             'competitive_advantages': competitive_advantages,
-            'possible_pitfalls': possible_pitfalls,
-            'estimating_notes': estimating_notes,
-            'fire_alarm_pages': fa_pages,
+            # Common fields
             'spec_book_context': None,
             'total_pages': len(pages_text),
             'analysis_timestamp': datetime.now().isoformat(),
@@ -1117,6 +1153,24 @@ class GeminiFireAlarmAnalyzer:
         """Default empty shell for consolidated Gemini extraction."""
 
         return {
+            # Original fields (keep for backward compatibility)
+            'project_info': {},
+            'code_requirements': {'fire_alarm_codes': []},
+            'fire_alarm_notes': [],
+            'mechanical_devices': {
+                'duct_detectors': [],
+                'dampers': [],
+                'high_airflow_units': [],
+            },
+            'device_layout_review': {
+                'primary_fa_page': {},
+                'unusual_placements': [],
+                'co_detection': {'needed': None, 'reason': None},
+            },
+            'specifications': {},
+            'possible_pitfalls': [],
+            'estimating_notes': [],
+            # New standardized fields
             'scope_summary': None,
             'project_details': {
                 'project_name': None,
@@ -1145,8 +1199,6 @@ class GeminiFireAlarmAnalyzer:
                 'access_control_doors': [],
             },
             'competitive_advantages': [],
-            'possible_pitfalls': [],
-            'estimating_notes': [],
         }
 
     def _compile_page_context(
@@ -1213,6 +1265,17 @@ SPEC EXCERPTS (IF ANY):
 
 Return a JSON object with these keys:
 
+ORIGINAL FIELDS (maintain backward compatibility):
+- project_info: {{project_name, project_address, project_location, project_type, applicable_codes, fire_alarm_required, sprinkler_status, scope_summary, voice_required, project_number, owner, architect, engineer}}
+- code_requirements: {{fire_alarm_codes: array of strings, code_notes: string or null}}
+- fire_alarm_notes: array of objects {{page, note_type, content}}
+- mechanical_devices: {{duct_detectors: array, dampers: array, high_airflow_units: array}}
+- device_layout_review: {{primary_fa_page: {{page, reason}}, unusual_placements: array, co_detection: {{needed, reason}}}}
+- specifications: {{CONTROL_PANEL, DEVICES, NOTIFICATION_DEVICES, SYSTEM_TYPE, WIRING_CLASS, COMMUNICATION, POWER_REQUIREMENTS, MONITORING, INTEGRATION, SPRINKLER_SYSTEM, APPROVED_MANUFACTURERS, AUDIO_SYSTEM, EXISTING_SYSTEM_PANEL_MODEL}}
+- possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
+- estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
+
+NEW STANDARDIZED FIELDS (for improved organization):
 1. scope_summary: A concise 2-3 sentence summary of the project scope from a fire alarm perspective.
    Example: "New construction of a daycare center in Overland Park, KS. Project requires design-build fire alarm system for a warehouse and office tenant finish. Includes notification (horns/strobes), sprinkler monitoring, and HVAC shutdown."
 
@@ -1246,10 +1309,6 @@ Return a JSON object with these keys:
 }}
 
 5. competitive_advantages: array of strings containing advice or recommendations to gain an edge over competing bidders
-
-6. possible_pitfalls: array of project-specific conflicts, omissions, or risks an estimator should flag (no canned checklists)
-
-7. estimating_notes: array of coordination or estimating notes tailored to this project (do not duplicate pitfalls; keep concise and case-specific)
 
 CRITICAL RULES:
 - If a field is unknown, use null, an empty array, or an empty object as appropriate.
