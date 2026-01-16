@@ -3,7 +3,11 @@
     "allow": [
       "Bash(tree:*)",
       "Bash(wc:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nStandardize Gemini analyzer JSON output structure\n\nRestructure gemini_analyzer.py to return more organized and standardized \nresults for improved clarity and consistency.\n\nChanges to gemini_analyzer.py:\n- Update DEFAULT_SYSTEM_INSTRUCTIONS with enhanced analysis rules\n  - Add HVAC equipment CFM highlighting \\(>2,000 CFM\\)\n  - Include access control integration requirements\n  - Add device placement intelligence guidance\n  - Include competitive advantage identification\n\n- Implement new standardized JSON response structure:\n  - scope_summary: Concise project overview\n  - project_details: Name, address, type, building type, codes, occupancy\n  - fire_alarm_details: Requirements, panel status, voice, CO, barriers\n  - hvac_mechanical: Equipment list with CFM flagging, dampers, access control\n  - competitive_advantages: Bidding edge recommendations\n  - possible_pitfalls: Project-specific risks\n  - estimating_notes: Coordination notes\n\n- Update _composite_response_defaults\\(\\) to match new schema\n- Enhance _run_consolidated_extraction\\(\\) prompt with detailed field specs\n- Simplify _run_analysis_pipeline\\(\\) to use new structure\n- Increase max_image_pages from 8 to 15 for better analysis\n- Add \"FA101\" to fire alarm page detection keywords\n\nChanges to notion_client.py:\n- Remove unused company field extraction logic\n- Clean up project_info mapping\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
