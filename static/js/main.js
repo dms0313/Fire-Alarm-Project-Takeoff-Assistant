@@ -2282,12 +2282,10 @@ function buildMechanicalRequirementsCard(mechanicalDevices = {}) {
 function buildDeviceLayoutCard(deviceLayout = {}) {
     const primaryPage = deviceLayout.primary_fa_page || {};
     const unusual = deviceLayout.unusual_placements || [];
-    const coDetection = deviceLayout.co_detection || {};
-    const hasCoDetails = !!(coDetection && (coDetection.needed || coDetection.reason));
 
     const hasPrimaryPage = Object.keys(primaryPage).length > 0;
 
-    if (!hasPrimaryPage && !unusual.length && !hasCoDetails) {
+    if (!hasPrimaryPage && !unusual.length) {
         return null;
     }
 
@@ -2324,17 +2322,9 @@ function buildDeviceLayoutCard(deviceLayout = {}) {
         content.appendChild(list);
     }
 
-    if (coDetection && (coDetection.needed || coDetection.reason)) {
-        const co = document.createElement('p');
-        const needed = coDetection.needed || 'Unknown';
-        const reason = coDetection.reason ? ` – ${coDetection.reason}` : '';
-        co.textContent = `CO Detection: ${needed}${reason}`;
-        content.appendChild(co);
-    }
-
     const helper = document.createElement('p');
     helper.className = 'card-helper';
-    helper.textContent = 'Pages where devices are shown, any atypical placements, and CO monitoring expectations.';
+    helper.textContent = 'Pages where devices are shown and any atypical placements.';
     content.appendChild(helper);
 
     return card;
