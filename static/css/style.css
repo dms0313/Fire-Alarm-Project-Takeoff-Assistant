@@ -1985,6 +1985,34 @@ textarea {
     font-style: italic;
 }
 
+/* Table styling for Project Snapshot */
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+}
+
+.info-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.info-table tr:last-child td {
+    border-bottom: none;
+}
+
+.info-table-label {
+    color: #aaa;
+    font-weight: 600;
+    width: 40%;
+    vertical-align: top;
+}
+
+.info-table-value {
+    color: #e0e0e0;
+    width: 60%;
+}
+
 .card-actions {
     display: flex;
     justify-content: flex-end;

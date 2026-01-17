@@ -2068,7 +2068,44 @@ function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}, pro
     }
 
     const { card, content } = createGeminiCard('Project Snapshot', 'full-width');
-    rows.forEach(([label, value]) => content.appendChild(createInfoRow(label, value)));
+
+    // Add scope summary at the top if present
+    if (resolved.scope_summary) {
+        const scopeHeading = document.createElement('h4');
+        scopeHeading.textContent = 'Scope Summary';
+        scopeHeading.style.marginTop = '0';
+        content.appendChild(scopeHeading);
+
+        const scopeParagraph = document.createElement('p');
+        scopeParagraph.textContent = resolved.scope_summary;
+        scopeParagraph.style.marginBottom = '20px';
+        content.appendChild(scopeParagraph);
+    }
+
+    // Create table for project details
+    const table = document.createElement('table');
+    table.className = 'info-table';
+
+    const tbody = document.createElement('tbody');
+    rows.forEach(([label, value]) => {
+        if (value) {
+            const row = document.createElement('tr');
+
+            const labelCell = document.createElement('td');
+            labelCell.className = 'info-table-label';
+            labelCell.textContent = label;
+
+            const valueCell = document.createElement('td');
+            valueCell.className = 'info-table-value';
+            valueCell.textContent = value;
+
+            row.appendChild(labelCell);
+            row.appendChild(valueCell);
+            tbody.appendChild(row);
+        }
+    });
+    table.appendChild(tbody);
+    content.appendChild(table);
 
     // Add applicable codes if present
     if (details.applicable_codes && Array.isArray(details.applicable_codes) && details.applicable_codes.length > 0) {
@@ -2084,16 +2121,6 @@ function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}, pro
             chipContainer.appendChild(chip);
         });
         content.appendChild(chipContainer);
-    }
-
-    if (resolved.scope_summary) {
-        const scopeHeading = document.createElement('h4');
-        scopeHeading.textContent = 'Scope Summary';
-        content.appendChild(scopeHeading);
-
-        const scopeParagraph = document.createElement('p');
-        scopeParagraph.textContent = resolved.scope_summary;
-        content.appendChild(scopeParagraph);
     }
 
     // Add Fire Alarm Details section
@@ -2115,11 +2142,29 @@ function buildHighLevelOverviewCard(overview = {}, fallbackProjectInfo = {}, pro
         faHeading.textContent = 'Fire Alarm Details';
         content.appendChild(faHeading);
 
+        const faTable = document.createElement('table');
+        faTable.className = 'info-table';
+
+        const faTbody = document.createElement('tbody');
         faRows.forEach(([label, value]) => {
             if (value) {
-                content.appendChild(createInfoRow(label, value));
+                const row = document.createElement('tr');
+
+                const labelCell = document.createElement('td');
+                labelCell.className = 'info-table-label';
+                labelCell.textContent = label;
+
+                const valueCell = document.createElement('td');
+                valueCell.className = 'info-table-value';
+                valueCell.textContent = value;
+
+                row.appendChild(labelCell);
+                row.appendChild(valueCell);
+                faTbody.appendChild(row);
             }
         });
+        faTable.appendChild(faTbody);
+        content.appendChild(faTable);
     }
 
     return card;
