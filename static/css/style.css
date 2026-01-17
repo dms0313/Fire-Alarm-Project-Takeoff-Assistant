@@ -509,12 +509,12 @@ textarea {
 
 .upload-section {
     background: linear-gradient(150deg, rgba(12, 119, 126, 0.18) 0%, rgba(33, 28, 49, 0.45) 100%);
-    padding: 44px;
-    border-radius: 20px;
-    margin-bottom: 28px;
+    padding: 24px;
+    border-radius: 16px;
+    margin-bottom: 20px;
     text-align: center;
     border: 1px solid rgba(78, 205, 196, 0.25);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .tab-container {
@@ -775,11 +775,11 @@ textarea {
 
 .drop-zone {
     border: 2px dashed rgba(78, 205, 196, 0.5);
-    border-radius: 20px;
-    padding: 60px 40px;
+    border-radius: 16px;
+    padding: 40px 30px;
     cursor: pointer;
     transition: all 0.3s ease;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
     background: linear-gradient(145deg, rgba(26, 26, 30, 0.95) 0%, rgba(20, 20, 24, 0.98) 100%);
     box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.25);
 }
@@ -793,8 +793,8 @@ textarea {
 }
 
 .drop-zone-icon {
-    font-size: 4.5em;
-    margin-bottom: 18px;
+    font-size: 3.5em;
+    margin-bottom: 12px;
 }
 
 .options-grid {
@@ -1140,16 +1140,15 @@ textarea {
 
 .page-selection {
     display: none;
-    margin-top: 24px;
-    background: linear-gradient(145deg, rgba(26, 26, 30, 0.95) 0%, rgba(20, 20, 24, 0.98) 100%);
-    padding: 24px;
-    border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    margin-top: 16px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 .page-selection.collapsed {
-    padding-bottom: 16px;
+    padding: 0;
 }
 
 .page-selection-header {
@@ -1158,6 +1157,9 @@ textarea {
     justify-content: space-between;
     gap: 12px;
     flex-wrap: wrap;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(78, 205, 196, 0.15);
+    margin-bottom: 16px;
 }
 
 .collapse-toggle {
@@ -1203,6 +1205,12 @@ textarea {
 .page-selection.collapsed .page-grid-wrapper,
 .page-selection.collapsed .page-hover-preview {
     display: none;
+}
+
+.page-selection.collapsed .page-selection-header {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
 }
 
 .page-grid-wrapper.collapsed::after {
