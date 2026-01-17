@@ -1891,7 +1891,7 @@ function displayGeminiResults(data, options = {}) {
 
     const pitfallsCard = buildPitfallsCard({}, possiblePitfalls);
 
-    const summaryCard = buildSummaryCard(totalPages, analysisTimestamp);
+    const summaryCard = buildSummaryCard(data);
 
     const cardsInRenderOrder = [
         overviewCard,
@@ -3159,10 +3159,37 @@ function buildSpecificationsCard(specifications = {}) {
     return card;
 }
 
-function buildSummaryCard(totalPages, analysisTimestamp) {
+function buildSummaryCard(data = {}) {
     const { card, content } = createGeminiCard('Analysis Summary');
-    content.appendChild(createInfoRow('Total Pages Reviewed', totalPages));
 
+    const totalPages = data.total_pages;
+    const analysisTimestamp = data.analysis_timestamp;
+    const imagePagesSent = data.image_pages_sent || [];
+    const imagesAttached = data.images_attached_to_gemini;
+    const imageError = data.image_error;
+    const promptFeedback = data.prompt_feedback;
+    const generationSettings = data.generation_settings || {};
+    const error = data.error;
+
+    // Total pages
+    if (totalPages) {
+        content.appendChild(createInfoRow('Total Pages Reviewed', totalPages));
+    }
+
+    // Pages transmitted to Gemini as images
+    if (imagePagesSent && imagePagesSent.length > 0) {
+        const pageList = imagePagesSent.join(', ');
+        content.appendChild(createInfoRow('Pages Transmitted to Gemini', `${imagePagesSent.length} pages (${pageList})`));
+    } else if (imagesAttached === false) {
+        content.appendChild(createInfoRow('Pages Transmitted to Gemini', 'None (text-only analysis)'));
+    }
+
+    // Gemini model used
+    if (generationSettings.model) {
+        content.appendChild(createInfoRow('Gemini Model', generationSettings.model));
+    }
+
+    // Generated timestamp
     if (analysisTimestamp) {
         const summaryDate = new Date(analysisTimestamp);
         const formatted = summaryDate.toLocaleString(undefined, {
@@ -3172,9 +3199,51 @@ function buildSummaryCard(totalPages, analysisTimestamp) {
         content.appendChild(createInfoRow('Generated', formatted));
     }
 
-    const helper = document.createElement('p');
-    helper.textContent = 'Only cover pages, fire alarm-related electrical sheets, and mechanical notes impacting the fire alarm system were considered. Plumbing and unrelated trades were ignored.';
-    content.appendChild(helper);
+    // Errors
+    if (error) {
+        const errorRow = document.createElement('div');
+        errorRow.className = 'info-row';
+        const errorLabel = document.createElement('span');
+        errorLabel.className = 'info-label';
+        errorLabel.textContent = 'Error';
+        const errorValue = document.createElement('span');
+        errorValue.className = 'info-value';
+        errorValue.style.color = '#ef4444';
+        errorValue.textContent = error;
+        errorRow.appendChild(errorLabel);
+        errorRow.appendChild(errorValue);
+        content.appendChild(errorRow);
+    }
+
+    if (imageError) {
+        const imgErrorRow = document.createElement('div');
+        imgErrorRow.className = 'info-row';
+        const imgErrorLabel = document.createElement('span');
+        imgErrorLabel.className = 'info-label';
+        imgErrorLabel.textContent = 'Image Processing Error';
+        const imgErrorValue = document.createElement('span');
+        imgErrorValue.className = 'info-value';
+        imgErrorValue.style.color = '#f59e0b';
+        imgErrorValue.textContent = imageError;
+        imgErrorRow.appendChild(imgErrorLabel);
+        imgErrorRow.appendChild(imgErrorValue);
+        content.appendChild(imgErrorRow);
+    }
+
+    if (promptFeedback) {
+        const feedbackRow = document.createElement('div');
+        feedbackRow.className = 'info-row';
+        const feedbackLabel = document.createElement('span');
+        feedbackLabel.className = 'info-label';
+        feedbackLabel.textContent = 'Gemini Feedback';
+        const feedbackValue = document.createElement('span');
+        feedbackValue.className = 'info-value';
+        feedbackValue.style.color = '#f59e0b';
+        feedbackValue.textContent = typeof promptFeedback === 'string' ? promptFeedback : JSON.stringify(promptFeedback);
+        feedbackRow.appendChild(feedbackLabel);
+        feedbackRow.appendChild(feedbackValue);
+        content.appendChild(feedbackRow);
+    }
 
     return card;
 }
