@@ -3396,11 +3396,6 @@ function formatSpecLabel(key) {
         .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function formatNotionColor(text, color) {
-    const allowed = new Set(['gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
-    const safeColor = allowed.has(color) ? color : 'blue';
-    return `<span style="color: ${safeColor}; font-weight: 600;">${text}</span>`;
-}
 
 function copyGeminiSections() {
     if (!latestGeminiResults || !latestGeminiResults.success) {
@@ -3408,312 +3403,242 @@ function copyGeminiSections() {
         return;
     }
 
-    const text = buildCopyableSectionsText(latestGeminiResults);
-    if (!text) {
+    const htmlContent = buildHTMLClipboardContent(latestGeminiResults);
+    const plainContent = buildPlainClipboardContent(latestGeminiResults);
+
+    if (!htmlContent && !plainContent) {
         setCopyStatus('No Gemini content is available to copy yet.', 'error');
         return;
     }
 
-    const onSuccess = () => setCopyStatus('Copied the full Gemini summary, notes, devices, and specs to your clipboard.');
-    const onError = () =>
-        setCopyStatus('Unable to copy automatically. Select the text manually and use Ctrl/Cmd + C.', 'error');
+    const onSuccess = () => setCopyStatus('Copied to clipboard (Rich Text + Plain Text).');
+    const onError = () => {
+        // Fallback: simpler copy if ClipboardItem fails
+        fallbackCopyToClipboard(plainContent,
+            () => setCopyStatus('Copied plain text (fallback).'),
+            () => setCopyStatus('Unable to copy. Please manually select and copy.', 'error')
+        );
+    };
 
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
-            fallbackCopyToClipboard(text, onSuccess, onError);
+    if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+        const item = new ClipboardItem({
+            'text/html': new Blob([htmlContent], { type: 'text/html' }),
+            'text/plain': new Blob([plainContent], { type: 'text/plain' })
         });
-    } else {
-        fallbackCopyToClipboard(text, onSuccess, onError);
-    }
-}
-
-function fallbackCopyToClipboard(text, onSuccess, onError) {
-    try {
-        const textarea = document.createElement('textarea');
-        textarea.value = text;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        textarea.setAttribute('readonly', '');
-        document.body.appendChild(textarea);
-        textarea.select();
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textarea);
-        if (successful) {
-            onSuccess();
-        } else {
+        navigator.clipboard.write([item]).then(onSuccess).catch((err) => {
+            console.warn('Clipboard write failed, trying fallback:', err);
             onError();
-        }
-    } catch (err) {
-        console.error('Copy failed', err);
+        });
+    } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(plainContent).then(onSuccess).catch(onError);
+    } else {
         onError();
     }
 }
 
-function appendSection(lines, title, contentLines, level = 2, options = {}) {
-    const { allowEmpty = false } = options;
-    if (!allowEmpty && (!Array.isArray(contentLines) || contentLines.length === 0)) {
-        return;
+function buildHTMLClipboardContent(data) {
+    const styleH1 = 'font-size: 16pt; font-weight: bold; color: #2C3E50; margin-top: 1em; margin-bottom: 0.5em;';
+    const styleH2 = 'font-size: 14pt; font-weight: bold; color: #34495E; margin-top: 1em; margin-bottom: 0.5em;';
+    const styleH3 = 'font-size: 11pt; font-weight: bold; color: #5D6D7E; margin-top: 0.8em;';
+    const styleNormal = 'font-size: 10pt; color: #333; line-height: 1.4;';
+    const styleLabel = 'font-weight: bold; color: #444;';
+    const styleValue = 'color: #000;';
+    const styleList = 'margin: 0.2em 0; padding-left: 1.2em;';
+    const styleListItem = 'margin-bottom: 0.3em;';
+
+    // Helpers
+    const h1 = (text) => `<h1 style="${styleH1}">${escapeHtml(text)}</h1>`;
+    const h2 = (text) => `<h2 style="${styleH2}">${escapeHtml(text)}</h2>`;
+    const h3 = (text) => `<h3 style="${styleH3}">${escapeHtml(text)}</h3>`;
+    const p = (text) => `<div style="${styleNormal}">${text}</div>`;
+    const kv = (label, val) => `<div><span style="${styleLabel}">${escapeHtml(label)}:</span> <span style="${styleValue}">${escapeHtml(val)}</span></div>`;
+    const list = (items) => {
+        if (!items || !items.length) return '';
+        return `<ul style="${styleList}">` +
+            items.map(item => `<li style="${styleListItem}"><span style="${styleNormal}">${escapeHtml(item)}</span></li>`).join('') +
+            '</ul>';
+    };
+
+    let parts = [];
+
+    // Header
+    parts.push(h1(data.project_info?.project_name || 'Fire Alarm Takeoff Analysis'));
+    parts.push(p(`<i>Generated on ${new Date().toLocaleDateString()}</i>`));
+
+    // Scope Summary
+    const summary = data.scope_summary || data.project_info?.scope_summary;
+    if (summary) {
+        parts.push(h2('Scope Summary'));
+        parts.push(p(escapeHtml(summary)));
     }
 
-    const filtered = Array.isArray(contentLines)
-        ? contentLines.filter((line) => line !== undefined && line !== null)
-        : [];
-    if (!allowEmpty && filtered.length === 0) {
-        return;
+    // Project Details
+    const projDetails = data.project_details || data.project_info || {};
+    parts.push(h2('Project Details'));
+    parts.push(kv('Project Name', projDetails.project_name || 'N/A'));
+    parts.push(kv('Address', projDetails.project_address || projDetails.project_location || 'N/A'));
+    parts.push(kv('Type', projDetails.project_type || 'N/A'));
+    parts.push(kv('Building', projDetails.building_type || 'N/A'));
+    if (projDetails.applicable_codes?.length) {
+        parts.push(kv('Applicable Codes', projDetails.applicable_codes.join(', ')));
     }
 
-    const heading = `${'#'.repeat(level)} ${title}`;
-    const needsDivider = lines.length > 0 && lines.some((line) => line && line.trim());
-    if (needsDivider) {
-        lines.push('', '---');
+    // Fire Alarm Details
+    const faDetails = data.fire_alarm_details || {};
+    parts.push(h2('Fire Alarm Details'));
+    parts.push(kv('Fire Alarm Required', faDetails.fire_alarm_required || 'Unknown'));
+    parts.push(kv('Panel Status', faDetails.panel_status || 'Unknown'));
+    if (faDetails.existing_panel_manufacturer) {
+        parts.push(kv('Existing Manufacturer', faDetails.existing_panel_manufacturer));
     }
-    lines.push('', heading, ...filtered);
-}
+    parts.push(kv('Sprinkler Status', faDetails.sprinkler_status || 'Unknown'));
+    parts.push(kv('Voice Evacuation', faDetails.voice_required || 'Unknown'));
+    parts.push(kv('CO Detection', faDetails.co_required || 'Unknown'));
 
-function appendDetailLine(target, label, value) {
-    if (!target || !Array.isArray(target)) {
-        return;
-    }
-    const normalized = normalizeStructuredText(value);
-    if (normalized) {
-        target.push(`- **${label}:** ${normalized}`);
-    }
-}
+    // HVAC / Mechanical
+    const hvac = data.hvac_mechanical || {};
+    const mechanicalDevices = data.mechanical_devices || {}; // Fallback
+    parts.push(h2('HVAC & Mechanical Coordination'));
 
-function appendListBlock(target, label, values = []) {
-    if (!target || !Array.isArray(target)) {
-        return;
-    }
-    const items = uniqueNonEmptyList(values);
-    if (items.length === 0) {
-        return;
-    }
-    target.push(`- **${label}:**`);
-    items.forEach((item) => target.push(`  - ${item}`));
-}
+    const hvacUnits = hvac.hvac_equipment || mechanicalDevices.high_airflow_units || [];
+    const over2000 = hvacUnits.filter(u => u.over_2000_cfm || (u.cfm >= 2000));
 
-function uniqueNonEmptyList(items = []) {
-    const seen = new Set();
-    const results = [];
-    items.forEach((item) => {
-        const normalized = normalizeStructuredText(item);
-        if (normalized && !seen.has(normalized)) {
-            seen.add(normalized);
-            results.push(normalized);
-        }
-    });
-    return results;
-}
-
-function formatPageLabel(page) {
-    if (page === undefined || page === null || page === '') {
-        return 'Page ?';
-    }
-    return `Page ${page}`;
-}
-
-function formatFireAlarmNote(note = {}) {
-    if (!note || typeof note !== 'object') {
-        return normalizeStructuredText(note);
-    }
-    const pageLabel = formatPageLabel(note.page);
-    const noteType = note.note_type ? `[${note.note_type}] ` : '';
-    const content = note.content || note.note || note.text || 'Details not provided.';
-    return `${pageLabel} — ${noteType}${content}`;
-}
-
-function formatMechanicalDevice(device) {
-    if (!device || typeof device !== 'object') {
-        return normalizeStructuredText(device);
+    if (over2000.length > 0) {
+        parts.push(h3('Priority: Units > 2,000 CFM (Shutdown Required)'));
+        parts.push(list(over2000.map(u => {
+            const model = u.model || u.unit_number || 'Unit';
+            const cfm = u.cfm ? `${u.cfm} CFM` : 'High CFM';
+            return `${model} (${cfm}) - Page ${u.page || '?'}`;
+        })));
     }
 
-    const parts = [
-        formatPageLabel(device.page),
-        device.device_type || device.type,
-        device.location || device.equipment_id,
-        device.quantity ? `Qty ${device.quantity}` : null,
-        device.airflow_cfm ? `${device.airflow_cfm} CFM` : null,
-        device.damper_type,
-        device.requires_duct_detector ? `Duct detector: ${device.requires_duct_detector}` : null,
-        device.fire_alarm_action,
-        device.specifications,
-    ].filter(Boolean);
-
-    return parts.map((part) => normalizeStructuredText(part)).filter(Boolean).join(' — ');
-}
-
-function buildRunDetailsLines({ analysis_timestamp: analysisTimestamp, total_pages: totalPages, job_id: jobId }) {
-    const lines = [];
-    if (analysisTimestamp) {
-        const summaryDate = new Date(analysisTimestamp);
-        const dateText = Number.isNaN(summaryDate.getTime()) ? analysisTimestamp : summaryDate.toLocaleString();
-        lines.push(`- **Generated:** ${dateText}`);
-    }
-    if (totalPages !== undefined && totalPages !== null) {
-        lines.push(`- **Total Pages Reviewed:** ${totalPages}`);
-    }
-    if (jobId) {
-        lines.push(`- **Gemini Job ID:** ${jobId}`);
-    }
-    return lines;
-}
-
-function buildSnapshotLines(overview = {}) {
-    const lines = [];
-    appendDetailLine(lines, 'Project', overview.project_name || overview.name);
-    appendDetailLine(lines, 'Location', overview.project_address || overview.project_location || overview.location);
-    appendDetailLine(lines, 'Project Type', overview.project_type);
-    appendDetailLine(lines, 'Project Number', overview.project_number);
-    appendDetailLine(lines, 'Owner / Client', overview.owner);
-    appendDetailLine(lines, 'Architect', overview.architect);
-    appendDetailLine(lines, 'Engineer', overview.engineer);
-    appendDetailLine(lines, 'Fire Alarm Required', overview.fire_alarm_required);
-    appendDetailLine(lines, 'Sprinkler Status', overview.sprinkler_status);
-    appendDetailLine(lines, 'Voice Required', overview.voice_required);
-    appendDetailLine(lines, 'Applicable Codes', overview.applicable_codes);
-    appendDetailLine(lines, 'Scope Summary', overview.scope_summary);
-    return lines;
-}
-
-function buildBriefingLines(briefing = {}, fallbackNotes = [], fireAlarmPages = [], structuredSummary = {}) {
-    const lines = [];
-    const requirements = [...(briefing.requirements || []), ...(briefing.equipment || [])];
-    appendListBlock(lines, 'Key Requirements & Equipment', requirements);
-
-    const estimatingNotes = structuredSummary.sections?.estimating_notes || [];
-    appendListBlock(lines, 'Estimating & Coordination Notes', estimatingNotes);
-
-    const pages = fireAlarmPages.map((page) => formatPageLabel(page));
-    appendListBlock(lines, 'Fire Alarm Focus Pages', pages);
-
-    const noteCandidates =
-        (Array.isArray(briefing.notes) && briefing.notes.length > 0 ? briefing.notes : fallbackNotes) || [];
-    const formattedNotes = noteCandidates.map((note) => formatFireAlarmNote(note));
-    appendListBlock(lines, 'Project-Specific Fire Alarm Notes', formattedNotes);
-
-    return lines;
-}
-
-function buildCodeLines(fireAlarmBriefing = {}, codeRequirements = {}) {
-    const codes = [
-        ...(fireAlarmBriefing.codes || []),
-        ...(codeRequirements.fire_alarm_codes || codeRequirements.fire_alarm_standards || []),
-    ];
-    const lines = [];
-    appendListBlock(lines, 'Referenced Codes & Standards', codes);
-    return lines;
-}
-
-function buildMechanicalLines(mechanicalDevices = {}) {
-    const lines = [];
-    const sections = [
-        ['Duct Detectors', mechanicalDevices.duct_detectors],
-        ['Smoke / Fire Dampers', mechanicalDevices.dampers],
-        ['HVAC Equipment Over 2000 CFM', mechanicalDevices.high_airflow_units],
-    ];
-
-    sections.forEach(([title, devices]) => {
-        const formattedDevices = (devices || []).map((device) => formatMechanicalDevice(device)).filter(Boolean);
-        if (formattedDevices.length > 0) {
-            lines.push(`- **${title}:**`);
-            formattedDevices.forEach((device) => lines.push(`  - ${device}`));
-        }
-    });
-
-    if (lines.length === 0) {
-        lines.push('- No duct detectors, dampers, or high-airflow units were flagged.');
+    const dampers = hvac.fire_smoke_dampers_present === 'yes' || mechanicalDevices.dampers?.length > 0;
+    if (dampers) {
+        parts.push(h3('Fire/Smoke Dampers Detected'));
+        parts.push(list((mechanicalDevices.dampers || []).map(d => formatMechanicalDevice(d))));
     }
 
-    return lines;
-}
-
-function buildDeviceLayoutLines(deviceLayout = {}) {
-    const lines = [];
-    const primaryPage = deviceLayout.primary_fa_page || {};
-    const unusual = deviceLayout.unusual_placements || [];
-    const coDetection = deviceLayout.co_detection || {};
-
-    if (primaryPage && Object.keys(primaryPage).length > 0) {
-        const reason = normalizeStructuredText(primaryPage.reason || primaryPage.note);
-        const suffix = reason ? ` — ${reason}` : '';
-        lines.push(`- **Primary FA Layout Page:** ${formatPageLabel(primaryPage.page)}${suffix}`);
+    if (!over2000.length && !dampers) {
+        parts.push(p('No major HVAC thresholds (dampers or >2000 CFM) explicitly flagged.'));
     }
 
-    if (Array.isArray(unusual) && unusual.length > 0) {
-        lines.push('- **Unusual Placements & Reasons:**');
-        unusual.forEach((item) => {
-            const page = formatPageLabel(item.page);
-            const device = item.device_type || 'Device';
-            const placement = normalizeStructuredText(item.placement);
-            const reason = normalizeStructuredText(item.reason || item.impact);
-            const details = [device, placement].filter(Boolean).join(' — ');
-            const suffix = reason ? ` (${reason})` : '';
-            lines.push(`  - ${page}: ${details || device}${suffix}`);
-        });
-    }
-
-    if (coDetection && (coDetection.needed || coDetection.reason)) {
-        const needed = coDetection.needed || 'Unknown';
-        const reason = coDetection.reason ? ` — ${coDetection.reason}` : '';
-        lines.push(`- **CO Detection:** ${needed}${reason}`);
-    }
-
-    return lines;
-}
-
-function buildSpecificationLines(specifications = {}) {
-    const entries = Object.entries(specifications || {}).filter(
-        ([key, value]) => key !== 'error' && value !== undefined && value !== null && value !== ''
-    );
-
-    if (entries.length === 0) {
-        return [];
-    }
-
-    entries.sort(([a], [b]) => a.localeCompare(b));
-    return entries.map(([key, value]) => {
-        const label = key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-        const formatted = formatValue(value);
-        return `- **${label}:** ${formatted}`;
-    });
-}
-
-function buildCopyableSectionsText(data = {}) {
-    const lines = ['# Fire Alarm Takeoff Summary', '', formatNotionColor('Formatted for Notion', 'blue')];
-    // Use raw project_info data directly (no more pre-formatted summaries)
-    const overview = data.project_info || {};
-
-    appendSection(lines, 'Run Details', buildRunDetailsLines(data));
-    appendSection(lines, 'Project Snapshot', buildSnapshotLines(overview));
-    appendSection(
-        lines,
-        'Fire Alarm Briefing',
-        buildBriefingLines({}, data.fire_alarm_notes, data.fire_alarm_pages, {})
-    );
-    appendSection(lines, 'Fire Alarm Codes & Standards', buildCodeLines({}, data.code_requirements));
-    appendSection(lines, 'Mechanical Coordination (Fire Alarm)', buildMechanicalLines(data.mechanical_devices));
-    appendSection(lines, 'Device Placement Review', buildDeviceLayoutLines(data.device_layout_review));
-    appendSection(lines, 'Fire Alarm Specifications', buildSpecificationLines(data.specifications));
-
-    // Display pitfalls and estimating notes directly from raw data
+    // Pitfalls & Notes
     const pitfalls = data.possible_pitfalls || data.pitfalls || [];
-    const estimatingNotes = data.estimating_notes || [];
-    if (pitfalls.length > 0 || estimatingNotes.length > 0) {
-        appendSection(lines, 'Pitfalls & Estimating Notes', [], 2, { allowEmpty: true });
-        if (pitfalls.length > 0) {
-            lines.push('', `### ${formatNotionColor('Pitfalls', 'orange')}`, ...pitfalls.map((item) => `- ${item}`));
-        }
-        if (estimatingNotes.length > 0) {
-            lines.push('', `### ${formatNotionColor('Estimating Notes', 'blue')}`, ...estimatingNotes.map((item) => `- ${item}`));
-        }
+    const estNotes = data.estimating_notes || [];
+
+    if (pitfalls.length > 0) {
+        parts.push(`<h2 style="${styleH2}; color: #D35400;">Potential Pitfalls & Risks</h2>`);
+        parts.push(list(pitfalls));
     }
 
-    const hasContent = lines.some((line, index) => index > 0 && line && line.trim() && !line.startsWith('#'));
-    if (!hasContent) {
-        return '';
+    if (estNotes.length > 0) {
+        parts.push(h2('Estimating Notes'));
+        parts.push(list(estNotes));
     }
 
-    return lines.filter((line) => line !== undefined && line !== null).join('\n');
+    // Competitive Advantage
+    const advantages = data.competitive_advantages || [];
+    if (advantages.length > 0) {
+        parts.push(`<h2 style="${styleH2}; color: #27AE60;">Competitive Advantages</h2>`);
+        parts.push(list(advantages));
+    }
+
+    return parts.join('\n');
+}
+
+function buildPlainClipboardContent(data) {
+    let lines = [];
+    const pushLn = (l = '') => lines.push(l);
+
+    // Header
+    pushLn((data.project_info?.project_name || 'Fire Alarm Takeoff Analysis').toUpperCase());
+    pushLn('='.repeat(40));
+    pushLn();
+
+    // Scope
+    const summary = data.scope_summary || data.project_info?.scope_summary;
+    if (summary) {
+        pushLn('SCOPE SUMMARY');
+        pushLn('-'.repeat(15));
+        pushLn(summary);
+        pushLn();
+    }
+
+    // Details - simplified for plain text
+    const proj = data.project_details || data.project_info || {};
+    pushLn('PROJECT DETAILS');
+    pushLn('-'.repeat(15));
+    if (proj.project_name) pushLn(`Project: ${proj.project_name}`);
+    if (proj.project_address) pushLn(`Address: ${proj.project_address}`);
+    if (proj.project_type) pushLn(`Type:    ${proj.project_type}`);
+    if (proj.applicable_codes?.length) pushLn(`Codes:   ${proj.applicable_codes.join(', ')}`);
+    pushLn();
+
+    // Fire Alarm
+    const fa = data.fire_alarm_details || {};
+    pushLn('FIRE ALARM DETAILS');
+    pushLn('-'.repeat(15));
+    pushLn(`FA Required:   ${fa.fire_alarm_required || 'Unknown'}`);
+    pushLn(`Panel Status:  ${fa.panel_status || 'Unknown'}`);
+    if (fa.existing_panel_manufacturer) pushLn(`Existing Mfg:  ${fa.existing_panel_manufacturer}`);
+    pushLn(`Sprinklers:    ${fa.sprinkler_status || 'Unknown'}`);
+    pushLn(`Voice Evac:    ${fa.voice_required || 'Unknown'}`);
+    pushLn(`CO Detection:  ${fa.co_required || 'Unknown'}`);
+    pushLn();
+
+    // HVAC
+    const hvac = data.hvac_mechanical || {};
+    const hvacUnits = hvac.hvac_equipment || [];
+    const over2000 = hvacUnits.filter(u => u.over_2000_cfm || (u.cfm >= 2000));
+
+    if (over2000.length > 0) {
+        pushLn('HVAC SHUTDOWN (UNITS > 2000 CFM)');
+        pushLn('-'.repeat(30));
+        over2000.forEach(u => {
+            const name = u.model || u.unit_number || 'Unit';
+            const cfm = u.cfm ? `${u.cfm} CFM` : 'Top CFM';
+            pushLn(`- ${name} (${cfm}) [Page ${u.page || '?'}]`);
+        });
+        pushLn();
+    }
+
+    // Pitfalls
+    const pitfalls = data.possible_pitfalls || data.pitfalls || [];
+    if (pitfalls.length > 0) {
+        pushLn('POTENTIAL PITFALLS & RISKS');
+        pushLn('-'.repeat(30));
+        pitfalls.forEach(p => pushLn(`! ${p}`));
+        pushLn();
+    }
+
+    // Notes
+    const estNotes = data.estimating_notes || [];
+    if (estNotes.length > 0) {
+        pushLn('ESTIMATING NOTES');
+        pushLn('-'.repeat(15));
+        estNotes.forEach(n => pushLn(`- ${n}`));
+        pushLn();
+    }
+
+    // Adv
+    const adv = data.competitive_advantages || [];
+    if (adv.length > 0) {
+        pushLn('COMPETITIVE ADVANTAGES');
+        pushLn('-'.repeat(25));
+        adv.forEach(a => pushLn(`+ ${a}`));
+    }
+
+    return lines.join('\n');
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }
 
 function formatValue(value) {
@@ -3727,6 +3652,7 @@ function formatValue(value) {
     }
     return typeof value === 'string' ? value.trim() : value;
 }
+
 
 async function copyTextToClipboard(button, text) {
     if (!text) {
@@ -4096,7 +4022,7 @@ async function downloadPage(jobId, pageNum, trigger) {
                 const text = await response.text();
                 const json = JSON.parse(text);
                 if (json.error) errorText = json.error;
-            } catch (_) {}
+            } catch (_) { }
             throw new Error(errorText);
         }
 
