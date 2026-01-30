@@ -3398,7 +3398,9 @@ function formatSpecLabel(key) {
 
 
 function copyGeminiSections() {
+    console.log('copyGeminiSections called');
     if (!latestGeminiResults || !latestGeminiResults.success) {
+        console.warn('latestGeminiResults is missing or failed', latestGeminiResults);
         setCopyStatus('Run Gemini analysis before copying sections.', 'error');
         return;
     }
@@ -3406,32 +3408,53 @@ function copyGeminiSections() {
     const htmlContent = buildHTMLClipboardContent(latestGeminiResults);
     const plainContent = buildPlainClipboardContent(latestGeminiResults);
 
+    console.log('HTML Content length:', htmlContent ? htmlContent.length : 0);
+    console.log('Plain Content length:', plainContent ? plainContent.length : 0);
+
     if (!htmlContent && !plainContent) {
         setCopyStatus('No Gemini content is available to copy yet.', 'error');
         return;
     }
 
-    const onSuccess = () => setCopyStatus('Copied to clipboard (Rich Text + Plain Text).');
+    const onSuccess = () => {
+        console.log('Clipboard write success');
+        setCopyStatus('Copied to clipboard (Rich Text + Plain Text).');
+    };
     const onError = () => {
+        console.warn('Clipboard write failed or not supported, trying fallback...');
         // Fallback: simpler copy if ClipboardItem fails
         fallbackCopyToClipboard(plainContent,
-            () => setCopyStatus('Copied plain text (fallback).'),
-            () => setCopyStatus('Unable to copy. Please manually select and copy.', 'error')
+            () => {
+                console.log('Fallback copy success');
+                setCopyStatus('Copied plain text (fallback).');
+            },
+            () => {
+                console.error('Fallback copy failed');
+                setCopyStatus('Unable to copy. Please manually select and copy.', 'error');
+            }
         );
     };
 
-    if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
-        const item = new ClipboardItem({
-            'text/html': new Blob([htmlContent], { type: 'text/html' }),
-            'text/plain': new Blob([plainContent], { type: 'text/plain' })
-        });
-        navigator.clipboard.write([item]).then(onSuccess).catch((err) => {
-            console.warn('Clipboard write failed, trying fallback:', err);
+    if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem === 'function') {
+        console.log('Attempting ClipboardItem copy...');
+        try {
+            const item = new ClipboardItem({
+                'text/html': new Blob([htmlContent], { type: 'text/html' }),
+                'text/plain': new Blob([plainContent], { type: 'text/plain' })
+            });
+            navigator.clipboard.write([item]).then(onSuccess).catch((err) => {
+                console.warn('Clipboard write failed:', err);
+                onError();
+            });
+        } catch (e) {
+            console.error('Error creating ClipboardItem:', e);
             onError();
-        });
+        }
     } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        console.log('Attempting navigator.clipboard.writeText...');
         navigator.clipboard.writeText(plainContent).then(onSuccess).catch(onError);
     } else {
+        console.log('No navigator.clipboard, going straight to fallback');
         onError();
     }
 }
