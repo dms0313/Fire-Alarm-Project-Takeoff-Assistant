@@ -3673,7 +3673,32 @@ function formatValue(value) {
             .map(([k, v]) => `${formatSpecLabel(k)}: ${v}`)
             .join('; ');
     }
+
     return typeof value === 'string' ? value.trim() : value;
+}
+
+function fallbackCopyToClipboard(text, onSuccess, onError) {
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (successful) {
+            if (onSuccess) onSuccess();
+        } else {
+            console.error('Fallback verify failed: execCommand returned false');
+            if (onError) onError();
+        }
+    } catch (err) {
+        console.error('Fallback Copy failed', err);
+        if (onError) onError();
+    }
 }
 
 
