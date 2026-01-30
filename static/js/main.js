@@ -3469,10 +3469,11 @@ function buildHTMLClipboardContent(data) {
     const styleList = 'margin: 0.2em 0; padding-left: 1.2em;';
     const styleListItem = 'margin-bottom: 0.3em;';
 
-    // Helpers
-    const h1 = (text) => `<h1 style="${styleH1}">${escapeHtml(text)}</h1>`;
-    const h2 = (text) => `<h2 style="${styleH2}">${escapeHtml(text)}</h2>`;
-    const h3 = (text) => `<h3 style="${styleH3}">${escapeHtml(text)}</h3>`;
+    // Helpers - using span for color to ensure it sticks in Word/Notion
+    // Notion Blue: #447ACB
+    const h1 = (text) => `<h1 style="${styleH1}"><span style="color: #447ACB;">${escapeHtml(text)}</span></h1>`;
+    const h2 = (text) => `<h2 style="${styleH2}"><span style="color: #447ACB;">${escapeHtml(text)}</span></h2>`;
+    const h3 = (text) => `<h3 style="${styleH3}"><span style="color: #447ACB;">${escapeHtml(text)}</span></h3>`;
     const p = (text) => `<div style="${styleNormal}">${text}</div>`;
     const kv = (label, val) => `<div><span style="${styleLabel}">${escapeHtml(label)}:</span> <span style="${styleValue}">${escapeHtml(val)}</span></div>`;
     const list = (items) => {
@@ -3550,7 +3551,8 @@ function buildHTMLClipboardContent(data) {
     const estNotes = data.estimating_notes || [];
 
     if (pitfalls.length > 0) {
-        parts.push(`<h2 style="${styleH2}; color: #D35400;">Potential Pitfalls & Risks</h2>`);
+        // Notion Red: #BE524B
+        parts.push(`<h2 style="${styleH2}"><span style="color: #BE524B;">Potential Pitfalls & Risks</span></h2>`);
         parts.push(list(pitfalls));
     }
 
@@ -3562,7 +3564,8 @@ function buildHTMLClipboardContent(data) {
     // Competitive Advantage
     const advantages = data.competitive_advantages || [];
     if (advantages.length > 0) {
-        parts.push(`<h2 style="${styleH2}; color: #27AE60;">Competitive Advantages</h2>`);
+        // Notion Green: #4F9768
+        parts.push(`<h2 style="${styleH2}"><span style="color: #4F9768;">Competitive Advantages</span></h2>`);
         parts.push(list(advantages));
     }
 
