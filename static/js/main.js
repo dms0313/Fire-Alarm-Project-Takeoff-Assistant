@@ -3677,8 +3677,29 @@ function formatValue(value) {
     return typeof value === 'string' ? value.trim() : value;
 }
 
-function fallbackCopyToClipboard(text, onSuccess, onError) {
+
+function fallbackCopyToClipboard(text, html, onSuccess, onError) {
+    // If we only have 2 args (text, onSuccess), shift them. 
+    // This allows backwards compatibility if called elsewhere with 2 or 3 args.
+    if (typeof html === 'function') {
+        onError = onSuccess;
+        onSuccess = html;
+        html = null;
+    }
+
     try {
+        const handler = (e) => {
+            if (html) {
+                e.clipboardData.setData('text/html', html);
+                e.clipboardData.setData('text/plain', text); // Ensure plain text checks out too
+                e.preventDefault(); // Stop normal copy
+            }
+        };
+
+        if (html) {
+            document.addEventListener('copy', handler);
+        }
+
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -3687,12 +3708,18 @@ function fallbackCopyToClipboard(text, onSuccess, onError) {
         textarea.setAttribute('readonly', '');
         document.body.appendChild(textarea);
         textarea.select();
+
         const successful = document.execCommand('copy');
+
         document.body.removeChild(textarea);
+        if (html) {
+            document.removeEventListener('copy', handler);
+        }
+
         if (successful) {
             if (onSuccess) onSuccess();
         } else {
-            console.error('Fallback verify failed: execCommand returned false');
+            console.error('Fallback copy failed: execCommand returned false');
             if (onError) onError();
         }
     } catch (err) {
