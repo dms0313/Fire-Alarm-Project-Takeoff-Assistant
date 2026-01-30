@@ -3424,9 +3424,10 @@ function copyGeminiSections() {
         console.warn('Clipboard write failed or not supported, trying fallback...');
         // Fallback: simpler copy if ClipboardItem fails
         fallbackCopyToClipboard(plainContent, htmlContent,
+
             () => {
                 console.log('Fallback copy success (Rich Text attempted)');
-                setCopyStatus('Copied to clipboard (Legacy Mode).');
+                setCopyStatus('Copied to clipboard!');
             },
             () => {
                 console.error('Fallback copy failed');
