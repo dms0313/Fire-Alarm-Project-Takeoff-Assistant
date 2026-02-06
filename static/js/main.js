@@ -3461,34 +3461,22 @@ function copyGeminiSections() {
 }
 
 function buildHTMLClipboardContent(data) {
-    const styleH1 = 'font-size: 16pt; font-weight: bold; color: #2C3E50; margin-top: 1em; margin-bottom: 0.5em;';
-    const styleH2 = 'font-size: 14pt; font-weight: bold; color: #34495E; margin-top: 1em; margin-bottom: 0.5em;';
-    const styleH3 = 'font-size: 11pt; font-weight: bold; color: #5D6D7E; margin-top: 0.8em;';
-    const styleNormal = 'font-size: 10pt; color: #333; line-height: 1.4;';
-    const styleLabel = 'font-weight: bold; color: #444;';
-    const styleValue = 'color: #000;';
-    const styleList = 'margin: 0.2em 0; padding-left: 1.2em;';
-    const styleListItem = 'margin-bottom: 0.3em;';
-
-    // Helpers - using KaTeX for Notion as requested
-    // Notion Blue: #447ACB
-    const h1 = (text) => `<h1 style="${styleH1}">$$ \\color{#447ACB}{\\textbf{${escapeHtml(text)}}} $$</h1>`;
-    const h2 = (text) => `<h2 style="${styleH2}">$$ \\color{#447ACB}{\\textbf{${escapeHtml(text)}}} $$</h2>`;
-    const h3 = (text) => `<h3 style="${styleH3}">$$ \\color{#447ACB}{\\textbf{${escapeHtml(text)}}} $$</h3>`;
-    const p = (text) => `<div style="${styleNormal}">${text}</div>`;
-    const kv = (label, val) => `<div><span style="${styleLabel}">${escapeHtml(label)}:</span> <span style="${styleValue}">${escapeHtml(val)}</span></div>`;
+    // Simple HTML formatting that works reliably when pasting into Notion, Word, etc.
+    const h1 = (text) => `<h1><strong>${escapeHtml(text)}</strong></h1>`;
+    const h2 = (text) => `<h2><strong>${escapeHtml(text)}</strong></h2>`;
+    const h3 = (text) => `<h3><strong>${escapeHtml(text)}</strong></h3>`;
+    const p = (text) => `<p>${text}</p>`;
+    const kv = (label, val) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(val)}</p>`;
     const list = (items) => {
         if (!items || !items.length) return '';
-        return `<ul style="${styleList}">` +
-            items.map(item => `<li style="${styleListItem}"><span style="${styleNormal}">${escapeHtml(item)}</span></li>`).join('') +
-            '</ul>';
+        return '<ul>' + items.map(item => `<li>${escapeHtml(item)}</li>`).join('') + '</ul>';
     };
 
     let parts = [];
 
     // Header
     parts.push(h1(data.project_info?.project_name || 'Fire Alarm Takeoff Analysis'));
-    parts.push(p(`<i>Generated on ${new Date().toLocaleDateString()}</i>`));
+    parts.push(p(`<em>Generated on ${new Date().toLocaleDateString()}</em>`));
 
     // Scope Summary
     const summary = data.scope_summary || data.project_info?.scope_summary;
@@ -3552,8 +3540,7 @@ function buildHTMLClipboardContent(data) {
     const estNotes = data.estimating_notes || [];
 
     if (pitfalls.length > 0) {
-        // Notion Red: #BE524B
-        parts.push(`<h2 style="${styleH2}">$$ \\color{#BE524B}{\\textbf{Potential Pitfalls & Risks}} $$</h2>`);
+        parts.push(h2('Potential Pitfalls & Risks'));
         parts.push(list(pitfalls));
     }
 
@@ -3565,8 +3552,7 @@ function buildHTMLClipboardContent(data) {
     // Competitive Advantage
     const advantages = data.competitive_advantages || [];
     if (advantages.length > 0) {
-        // Notion Green: #4F9768
-        parts.push(`<h2 style="${styleH2}">$$ \\color{#4F9768}{\\textbf{Competitive Advantages}} $$</h2>`);
+        parts.push(h2('Competitive Advantages'));
         parts.push(list(advantages));
     }
 
