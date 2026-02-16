@@ -357,6 +357,70 @@ def register_analysis_routes(app, analyzer):
             logger.error("Follow-up question failed: %s", exc, exc_info=True)
             return jsonify({'success': False, 'error': str(exc)}), 500
 
+    @app.route("/api/run_gemini_from_history/<job_id>", methods=["POST"])
+    def run_gemini_from_history(job_id):
+        """Re-run Gemini analysis for a stored history entry."""
+
+        if not analyzer.gemini_analyzer.is_available():
+            return jsonify({'success': False, 'error': 'Gemini AI not configured'}), 400
+
+        entry = history_store.load_entry(job_id)
+        if not entry:
+            return jsonify({'success': False, 'error': 'History entry not found'}), 404
+
+        pdf_path = entry.get('pdf_path')
+        if not pdf_path or not os.path.exists(pdf_path):
+             return jsonify({'success': False, 'error': 'Original PDF file not found in history'}), 404
+        
+        # We don't have the original spec files or additional attachments in history store necessarily 
+        # (unless we expanded history_store to save them all, which we haven't yet). 
+        # So we run with just the main PDF.
+        
+        try:
+            logger.info(f"Starting Gemini analysis for history job {job_id}")
+            
+            # Use original filename if available for project name extraction context
+            original_filename = entry.get('original_filename', 'history_reanalysis.pdf')
+
+            # Run analysis
+            results = analyzer.gemini_analyzer.analyze_pdf(
+                pdf_path,
+                include_images=True, # Default to true for re-runs
+                spec_pdf_path=None, 
+                additional_spec_paths=[],
+            )
+            results['job_id'] = job_id # Keep same ID or generate new? 
+            # Keeping same ID updates the existing entry, which is likely preferred for "re-run".
+            # But wait, analyze_pdf returns a fresh structure.
+            
+            project_name = _extract_project_name(results, original_filename)
+
+            # Update in-memory job cache
+            with analysis_lock:
+                 analysis_jobs[job_id] = {
+                    'results': results,
+                    'pdf_path': pdf_path,
+                    'temp_dir': entry.get('storage_dir'), # Reuse existing storage dir
+                    'timestamp': datetime.now().isoformat(),
+                    'analysis_type': 'gemini'
+                }
+
+            # Update persistent history
+            history_store.save_entry(
+                job_id,
+                analysis_type='gemini',
+                original_filename=original_filename,
+                results=results,
+                pdf_path=pdf_path,
+                project_name=project_name,
+            )
+
+            return jsonify(results)
+
+        except Exception as e:
+            logger.error(f"Error in Gemini history re-analysis: {str(e)}", exc_info=True)
+            return jsonify({'success': False, 'error': str(e)}), 500
+
     @app.route("/api/notion/export", methods=["POST"])
     def export_to_notion():
         """Send the latest Gemini project snapshot to Notion."""

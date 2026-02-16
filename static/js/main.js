@@ -4011,8 +4011,60 @@ function buildHistoryCard(entry) {
     deleteBtn.onclick = () => handleDeleteHistory(entry.job_id);
     actions.appendChild(deleteBtn);
 
+    const runGeminiBtn = document.createElement('button');
+    runGeminiBtn.className = 'btn btn-gemini-action';
+    runGeminiBtn.textContent = 'Run Gemini';
+    runGeminiBtn.onclick = (e) => runGeminiFromHistory(entry.job_id, e.target);
+    actions.appendChild(runGeminiBtn);
+
     card.appendChild(actions);
     return card;
+}
+
+async function runGeminiFromHistory(jobId, button) {
+    if (!jobId) return;
+
+    const originalText = button.textContent;
+    setButtonLoadingState(button, true, 'Analyzing...');
+    setHistoryStatus('Running Gemini analysis on saved file...');
+
+    try {
+        const response = await fetch(`/api/run_gemini_from_history/${jobId}`, {
+            method: 'POST'
+        });
+        const payload = await response.json();
+
+        if (!payload.success && !payload.job_id) { // job_id is present on success even if success flag isn't explicitly top-level in all result paths
+            // The analyzer returns the raw results dict, which might not have 'success': true at top level 
+            // but usually has data. Let's check for error key.
+            if (payload.error) {
+                throw new Error(payload.error);
+            }
+        }
+
+        // If we got here, it's likely successful or at least partial.
+        // Update global state
+        latestGeminiResults = payload;
+        currentGeminiJobId = jobId;
+
+        // Refresh history to show updated timestamp/type
+        await refreshHistoryList();
+
+        // Open the results
+        displayGeminiResults(payload, { fromHistory: true });
+        geminiPanel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        setHistoryStatus('Gemini analysis complete.');
+        closeHistoryPopup();
+
+    } catch (error) {
+        console.error('Gemini history run error:', error);
+        setHistoryStatus(error.message || 'Gemini analysis failed', true);
+        alert(`Gemini analysis failed: ${error.message}`);
+    } finally {
+        setButtonLoadingState(button, false);
+        button.textContent = originalText;
+    }
 }
 
 async function loadHistoryEntry(jobId, analysisType) {
