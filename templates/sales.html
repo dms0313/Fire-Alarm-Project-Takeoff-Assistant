@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Research Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script defer src="/static/js/sales.js"></script>
+</head>
+<body class="sales-body">
+    <div class="shadcn-shell">
+        <aside class="sidebar-16" aria-label="Sales navigation">
+            <div class="sidebar-brand">
+                <div class="brand-mark">SR</div>
+                <div>
+                    <p class="eyebrow">sidebar-16</p>
+                    <h1>Sales Research</h1>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a class="sidebar-link active" href="/sales">Dashboard</a>
+                <button class="sidebar-link" id="databaseViewBtn" type="button">Complete database</button>
+                <a class="sidebar-link" href="/">Fire alarm takeoff</a>
+            </nav>
+            <div class="sidebar-card">
+                <p class="eyebrow">Target verticals</p>
+                <p>Real estate agents, brokerages, flippers, property managers, builders, and short-term rental hosts.</p>
+            </div>
+        </aside>
+
+        <main class="sales-main">
+            <header class="sales-topbar">
+                <div>
+                    <p class="eyebrow">Real estate photography prospecting</p>
+                    <h2>Research dashboard</h2>
+                    <p class="section-subtitle">Search by industry, local area, and radius. Results return JSON-ready rows for shadcn data tables.</p>
+                </div>
+                <button class="search-trigger" id="openSalesSearch" type="button" aria-haspopup="dialog" aria-controls="salesSearchDialog">
+                    <span aria-hidden="true">⌕</span>
+                    New search
+                </button>
+            </header>
+
+            <section class="sales-summary-grid" aria-label="Research metrics">
+                <article class="metric-card"><span id="totalProspects">0</span><p>Total prospects</p></article>
+                <article class="metric-card"><span id="smallCount">0</span><p>Small businesses</p></article>
+                <article class="metric-card"><span id="mediumCount">0</span><p>Medium businesses</p></article>
+                <article class="metric-card"><span id="largeCount">0</span><p>Large businesses</p></article>
+            </section>
+
+            <section class="insights-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Gemini summary</p>
+                        <h3>Market insights</h3>
+                    </div>
+                </div>
+                <div id="geminiSalesSummary">Run a search to generate prospecting insights.</div>
+            </section>
+
+            <section id="dashboardTables" class="sales-table-stack"></section>
+        </main>
+    </div>
+
+    <div class="settings-overlay hidden" id="salesSearchDialog" role="dialog" aria-modal="true" aria-hidden="true">
+        <form class="settings-panel search-panel" id="salesSearchForm">
+            <div class="settings-header">
+                <div>
+                    <p class="eyebrow">Search details</p>
+                    <h2>Find real estate photography prospects</h2>
+                    <p class="settings-helper">Specify the business type, local area, and range location for the search.</p>
+                </div>
+                <button class="settings-close" id="closeSalesSearch" type="button" aria-label="Close search">×</button>
+            </div>
+            <div class="settings-grid one-column">
+                <label class="field-label">Industry / type of business
+                    <select id="salesIndustry" required>
+                        {% for industry in industries %}<option value="{{ industry }}">{{ industry }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label class="field-label">Local area to search
+                    <input id="salesArea" type="text" placeholder="Example: Tampa, FL" required>
+                </label>
+                <label class="field-label">Range location / radius
+                    <input id="salesRadius" type="text" placeholder="Example: 25 miles" value="25 miles" required>
+                </label>
+            </div>
+            <div class="dialog-actions">
+                <div class="sales-loader hidden" id="salesLoader"><span class="spinner"></span> Searching prospects...</div>
+                <button class="btn btn-gemini" id="runSalesSearch" type="submit">Run search</button>
+            </div>
+        </form>
+    </div>
+</body>
+</html>

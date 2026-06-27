@@ -2096,3 +2096,230 @@ textarea {
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     }
 }
+
+/* Sales research dashboard - shadcn sidebar-16 inspired */
+.sales-body {
+    padding: 0;
+    background: #09090b;
+    color: #fafafa;
+}
+
+.shadcn-shell {
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr);
+    min-height: 100vh;
+}
+
+.sidebar-16 {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 18px;
+    background: #0f0f11;
+    border-right: 1px solid #27272a;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.sidebar-brand,
+.sales-topbar,
+.section-heading,
+.dialog-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    background: #fafafa;
+    color: #09090b;
+    font-weight: 800;
+}
+
+.sidebar-brand h1,
+.sales-topbar h2 {
+    font-size: 1.25rem;
+    line-height: 1.2;
+}
+
+.sidebar-nav {
+    display: grid;
+    gap: 8px;
+}
+
+.sidebar-link {
+    width: 100%;
+    text-align: left;
+    color: #d4d4d8;
+    background: transparent;
+    border: 0;
+    border-radius: 10px;
+    padding: 11px 12px;
+    text-decoration: none;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.sidebar-link:hover,
+.sidebar-link.active {
+    background: #27272a;
+    color: #fff;
+}
+
+.sidebar-card,
+.metric-card,
+.insights-card,
+.data-card {
+    background: #18181b;
+    border: 1px solid #27272a;
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+}
+
+.sidebar-card {
+    margin-top: auto;
+    padding: 16px;
+    color: #a1a1aa;
+    line-height: 1.5;
+}
+
+.sales-main {
+    padding: 28px;
+    display: grid;
+    gap: 22px;
+    align-content: start;
+}
+
+.search-trigger {
+    border: 1px solid #3f3f46;
+    background: #fafafa;
+    color: #09090b;
+    border-radius: 12px;
+    padding: 11px 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.sales-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.metric-card,
+.insights-card,
+.data-card {
+    padding: 18px;
+}
+
+.metric-card span {
+    display: block;
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.metric-card p,
+.section-subtitle,
+.settings-helper {
+    color: #a1a1aa;
+}
+
+.sales-table-stack {
+    display: grid;
+    gap: 18px;
+}
+
+.table-scroll {
+    overflow: auto;
+    border: 1px solid #27272a;
+    border-radius: 12px;
+    margin-top: 12px;
+}
+
+.sales-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 860px;
+}
+
+.sales-data-table th,
+.sales-data-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid #27272a;
+    text-align: left;
+}
+
+.sales-data-table th {
+    color: #d4d4d8;
+    background: #09090b;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.json-details {
+    margin-top: 12px;
+    color: #d4d4d8;
+}
+
+.json-details pre {
+    margin-top: 10px;
+    padding: 14px;
+    overflow: auto;
+    background: #09090b;
+    border-radius: 12px;
+    color: #a7f3d0;
+}
+
+.search-panel select,
+.search-panel input {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #3f3f46;
+    background: #09090b;
+    color: #fafafa;
+}
+
+.one-column {
+    grid-template-columns: 1fr;
+}
+
+.field-label {
+    color: #fafafa;
+    font-weight: 700;
+}
+
+.sales-loader {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #a7f3d0;
+    font-weight: 700;
+}
+
+@media (max-width: 900px) {
+    .shadcn-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar-16 {
+        position: static;
+        height: auto;
+    }
+
+    .sales-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
